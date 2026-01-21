@@ -112,7 +112,7 @@ Navigate to `http://<host-ip>:3000` and login with user ***admin*** password ***
 
 ```yaml
 grafana:
-  image: grafana/grafana:7.2.0
+  image: grafana/grafana:12.0.2
   env_file:
     - config
 ```
@@ -140,7 +140,7 @@ Grafana is preconfigured with dashboards and Prometheus as the default data sour
 
 ***Docker Host Dashboard***
 
-![Host](https://raw.githubusercontent.com/stefanprodan/dockprom/master/screens/Grafana_Docker_Host.png)
+![Host](screens/Grafana_Docker_Host.png)
 
 The Docker Host Dashboard shows key metrics for monitoring the resource usage of your server:
 
@@ -169,7 +169,7 @@ node_filesystem_free_bytes
 
 ***Docker Containers Dashboard***
 
-![Containers](https://raw.githubusercontent.com/stefanprodan/dockprom/master/screens/Grafana_Docker_Containers.png)
+![Containers](screens/Grafana_Docker_Containers.png)
 
 The Docker Containers Dashboard shows key metrics for monitoring running containers:
 
@@ -201,7 +201,7 @@ node_filesystem_free_bytes
 
 ***Monitor Services Dashboard***
 
-![Monitor Services](https://raw.githubusercontent.com/stefanprodan/dockprom/master/screens/Grafana_Prometheus.png)
+![Monitor Services](screens/Grafana_Prometheus.png)
 
 The Monitor Services Dashboard shows key metrics for monitoring the containers that make up the monitoring stack:
 
@@ -216,11 +216,11 @@ The Monitor Services Dashboard shows key metrics for monitoring the containers t
 
 ## Define alerts
 
-Three alert groups have been setup within the [alert.rules](https://github.com/stefanprodan/dockprom/blob/master/prometheus/alert.rules) configuration file:
+Three alert groups have been setup within the [alert.rules](prometheus/alert.rules) configuration file:
 
-* Monitoring services alerts [targets](https://github.com/stefanprodan/dockprom/blob/master/prometheus/alert.rules#L2-L11)
-* Docker Host alerts [host](https://github.com/stefanprodan/dockprom/blob/master/prometheus/alert.rules#L13-L40)
-* Docker Containers alerts [containers](https://github.com/stefanprodan/dockprom/blob/master/prometheus/alert.rules#L42-L69)
+* Monitoring services alerts [targets](prometheus/alert.rules#L2-L11)
+* Docker Host alerts [host](prometheus/alert.rules#L13-L40)
+* Docker Containers alerts [containers](prometheus/alert.rules#L42-L69)
 
 You can modify the alert rules and reload them by making a HTTP POST call to Prometheus:
 
@@ -335,7 +335,7 @@ A complete list of integrations can be found [here](https://prometheus.io/docs/a
 
 You can view and silence notifications by accessing `http://<host-ip>:9093`.
 
-The notification receivers can be configured in [alertmanager/config.yml](https://github.com/stefanprodan/dockprom/blob/master/alertmanager/config.yml) file.
+The notification receivers can be configured in [alertmanager/config.yml](alertmanager/config.yml) file.
 
 To receive alerts via Slack you need to make a custom integration by choose ***incoming web hooks*** in your Slack team app page.
 You can find more details on setting up Slack integration [here](http://www.robustperception.io/using-slack-with-the-alertmanager/).
@@ -356,7 +356,7 @@ receivers:
             api_url: 'https://hooks.slack.com/services/<webhook-id>'
 ```
 
-![Slack Notifications](https://raw.githubusercontent.com/stefanprodan/dockprom/master/screens/Slack_Notifications.png)
+![Slack Notifications](screens/Slack_Notifications.png)
 
 ## Sending metrics to the Pushgateway
 
@@ -369,88 +369,6 @@ echo "some_metric 3.14" | curl --data-binary @- http://user:password@localhost:9
 ```
 
 Please replace the `user:password` part with your user and password set in the initial configuration (default: `admin:admin`).
-
-## Updating Grafana to v5.2.2
-
-[In Grafana versions >= 5.1 the id of the grafana user has been changed](http://docs.grafana.org/installation/docker/#migration-from-a-previous-version-of-the-docker-container-to-5-1-or-later). Unfortunately this means that files created prior to 5.1 won't have the correct permissions for later versions.
-
-| Version |   User  | User ID |
-|:-------:|:-------:|:-------:|
-|  < 5.1  | grafana |   104   |
-|  \>= 5.1 | grafana |   472   |
-
-There are two possible solutions to this problem.
-
-1. Change ownership from 104 to 472
-2. Start the upgraded container as user 104
-
-## Specifying a user in docker-compose.yml
-
-To change ownership of the files run your grafana container as root and modify the permissions.
-
-First perform a `docker-compose down` then modify your docker-compose.yml to include the `user: root` option:
-
-```yaml
-  grafana:
-    image: grafana/grafana:5.2.2
-    container_name: grafana
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/datasources:/etc/grafana/datasources
-      - ./grafana/dashboards:/etc/grafana/dashboards
-      - ./grafana/setup.sh:/setup.sh
-    entrypoint: /setup.sh
-    user: root
-    environment:
-      - GF_SECURITY_ADMIN_USER=${ADMIN_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
-      - GF_USERS_ALLOW_SIGN_UP=false
-    restart: unless-stopped
-    expose:
-      - 3000
-    networks:
-      - monitor-net
-    labels:
-      org.label-schema.group: "monitoring"
-```
-
-Perform a `docker-compose up -d` and then issue the following commands:
-
-```bash
-docker exec -it --user root grafana bash
-
-# in the container you just started:
-chown -R root:root /etc/grafana && \
-chmod -R a+r /etc/grafana && \
-chown -R grafana:grafana /var/lib/grafana && \
-chown -R grafana:grafana /usr/share/grafana
-```
-
-To run the grafana container as `user: 104` change your `docker-compose.yml` like such:
-
-```yaml
-  grafana:
-    image: grafana/grafana:5.2.2
-    container_name: grafana
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/datasources:/etc/grafana/datasources
-      - ./grafana/dashboards:/etc/grafana/dashboards
-      - ./grafana/setup.sh:/setup.sh
-    entrypoint: /setup.sh
-    user: "104"
-    environment:
-      - GF_SECURITY_ADMIN_USER=${ADMIN_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
-      - GF_USERS_ALLOW_SIGN_UP=false
-    restart: unless-stopped
-    expose:
-      - 3000
-    networks:
-      - monitor-net
-    labels:
-      org.label-schema.group: "monitoring"
-```
 
 ## Updating Caddy to v2
 
