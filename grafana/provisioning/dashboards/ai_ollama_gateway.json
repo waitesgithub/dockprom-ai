@@ -1,0 +1,294 @@
+{
+  "uid": "ai-ollama-gateway",
+  "title": "AI - Ollama Gateway (Envoy)",
+  "tags": [
+    "ai",
+    "ollama",
+    "envoy",
+    "prometheus"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "job",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(envoy_server_uptime, job)",
+          "refId": "job"
+        },
+        "current": {
+          "text": "ollama-gateway",
+          "value": "ollama-gateway"
+        },
+        "hide": 0
+      },
+      {
+        "name": "cluster",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(envoy_cluster_upstream_rq_total{job=\"$job\"}, envoy_cluster_name)",
+          "refId": "cluster"
+        },
+        "current": {
+          "text": "ollama_upstream",
+          "value": "ollama_upstream"
+        },
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Gateway Up",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"$job\"}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN"
+                },
+                "1": {
+                  "text": "UP"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "RPS",
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "ai:envoy:downstream_rps{job=\"$job\"}"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "5xx Rate",
+      "gridPos": {
+        "x": 9,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "ai:envoy:downstream_5xx_rps{job=\"$job\"}"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "p95 Downstream Latency (ms)",
+      "gridPos": {
+        "x": 14,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "ai:envoy:downstream_latency_p95_ms{job=\"$job\"}"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Active Requests",
+      "gridPos": {
+        "x": 19,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "ai:envoy:active_requests{job=\"$job\"}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "RPS by response code class",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "ai:envoy:downstream_rps_by_codeclass{job=\"$job\"}",
+          "legendFormat": "{{envoy_response_code_class}}xx"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Downstream latency percentiles (ms)",
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "ai:envoy:downstream_latency_p50_ms{job=\"$job\"}",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "ai:envoy:downstream_latency_p95_ms{job=\"$job\"}",
+          "legendFormat": "p95"
+        },
+        {
+          "refId": "C",
+          "expr": "ai:envoy:downstream_latency_p99_ms{job=\"$job\"}",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Upstream requests (to Ollama)",
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "ai:envoy:upstream_rps{job=\"$job\", envoy_cluster_name=\"$cluster\"}",
+          "legendFormat": "upstream_rq"
+        },
+        {
+          "refId": "B",
+          "expr": "ai:envoy:upstream_5xx_rps{job=\"$job\", envoy_cluster_name=\"$cluster\"}",
+          "legendFormat": "upstream_5xx"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Upstream latency percentiles (ms)",
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "ai:envoy:upstream_latency_p95_ms{job=\"$job\", envoy_cluster_name=\"$cluster\"}",
+          "legendFormat": "p95"
+        },
+        {
+          "refId": "B",
+          "expr": "ai:envoy:upstream_latency_p99_ms{job=\"$job\", envoy_cluster_name=\"$cluster\"}",
+          "legendFormat": "p99"
+        }
+      ]
+    }
+  ]
+}

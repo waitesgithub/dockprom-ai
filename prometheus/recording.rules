@@ -1,0 +1,96 @@
+groups:
+  - name: ai_observability_envoy_gateway
+    interval: 30s
+    rules:
+      - record: ai:envoy:downstream_rps
+        expr: sum by (job) (rate(envoy_http_downstream_rq_total[1m]))
+
+      - record: ai:envoy:downstream_rps_by_codeclass
+        expr: sum by (job, envoy_response_code_class) (rate(envoy_http_downstream_rq_xx[1m]))
+
+      - record: ai:envoy:downstream_5xx_rps
+        expr: sum by (job) (rate(envoy_http_downstream_rq_xx{envoy_response_code_class="5"}[5m]))
+
+      - record: ai:envoy:downstream_latency_p50_ms
+        expr: histogram_quantile(0.50, sum by (job, le) (rate(envoy_http_downstream_rq_time_bucket[5m]))) * 1000
+
+      - record: ai:envoy:downstream_latency_p95_ms
+        expr: histogram_quantile(0.95, sum by (job, le) (rate(envoy_http_downstream_rq_time_bucket[5m]))) * 1000
+
+      - record: ai:envoy:downstream_latency_p99_ms
+        expr: histogram_quantile(0.99, sum by (job, le) (rate(envoy_http_downstream_rq_time_bucket[5m]))) * 1000
+
+      - record: ai:envoy:active_requests
+        expr: sum by (job) (envoy_http_downstream_rq_active)
+
+      - record: ai:envoy:upstream_rps
+        expr: sum by (job, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_total[1m]))
+
+      - record: ai:envoy:upstream_5xx_rps
+        expr: sum by (job, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{envoy_response_code_class="5"}[5m]))
+
+      - record: ai:envoy:upstream_latency_p95_ms
+        expr: histogram_quantile(0.95, sum by (job, envoy_cluster_name, le) (rate(envoy_cluster_upstream_rq_time_bucket[5m]))) * 1000
+
+      - record: ai:envoy:upstream_latency_p99_ms
+        expr: histogram_quantile(0.99, sum by (job, envoy_cluster_name, le) (rate(envoy_cluster_upstream_rq_time_bucket[5m]))) * 1000
+
+  - name: ai_observability_llm_model_agnostic
+    interval: 30s
+    rules:
+      - record: ai:llm:rps
+        expr: sum by (service, model, provider) (rate(llm_requests_total[1m]))
+
+      - record: ai:llm:rps_by_status
+        expr: sum by (service, model, provider, status) (rate(llm_requests_total[1m]))
+
+      - record: ai:llm:error_rate
+        expr: |
+          (sum by (service, model, provider) (rate(llm_errors_total[5m])))
+          /
+          clamp_min(sum by (service, model, provider) (rate(llm_requests_total[5m])), 1)
+
+      - record: ai:llm:latency_p50_ms
+        expr: histogram_quantile(0.50, sum by (le, service, model, provider, stage) (rate(llm_latency_seconds_bucket[5m]))) * 1000
+
+      - record: ai:llm:latency_p95_ms
+        expr: histogram_quantile(0.95, sum by (le, service, model, provider, stage) (rate(llm_latency_seconds_bucket[5m]))) * 1000
+
+      - record: ai:llm:latency_p99_ms
+        expr: histogram_quantile(0.99, sum by (le, service, model, provider, stage) (rate(llm_latency_seconds_bucket[5m]))) * 1000
+
+      - record: ai:llm:ttft_p95_ms
+        expr: histogram_quantile(0.95, sum by (le, service, model, provider) (rate(llm_time_to_first_token_seconds_bucket[5m]))) * 1000
+
+      - record: ai:llm:queue_wait_p95_ms
+        expr: histogram_quantile(0.95, sum by (le, service, model, provider) (rate(llm_queue_wait_seconds_bucket[5m]))) * 1000
+
+      - record: ai:llm:tokens_per_sec
+        expr: sum by (service, model, provider, type) (rate(llm_tokens_total[1m]))
+
+      - record: ai:llm:tokens_per_request
+        expr: |
+          (sum by (service, model, provider) (rate(llm_tokens_total[5m])))
+          /
+          clamp_min(sum by (service, model, provider) (rate(llm_requests_total[5m])), 1)
+
+      - record: ai:llm:retries_per_sec
+        expr: sum by (service, model, provider) (rate(llm_retries_total[5m]))
+
+      - record: ai:llm:cancellations_per_sec
+        expr: sum by (service, model, provider) (rate(llm_cancellations_total[5m]))
+
+      - record: ai:rag:retrieval_latency_p95_ms
+        expr: histogram_quantile(0.95, sum by (le, service) (rate(rag_retrieval_latency_seconds_bucket[5m]))) * 1000
+
+      - record: ai:rag:empty_retrieval_per_sec
+        expr: sum by (service) (rate(rag_empty_retrieval_total[5m]))
+
+      - record: ai:tool:calls_per_sec
+        expr: sum by (service, tool, status) (rate(llm_tool_calls_total[5m]))
+
+      - record: ai:safety:guardrail_blocks_per_sec
+        expr: sum by (service, policy) (rate(llm_guardrail_blocks_total[5m]))
+
+      - record: ai:safety:pii_redactions_per_sec
+        expr: sum by (service, type) (rate(llm_pii_redactions_total[5m]))
