@@ -1,20 +1,26 @@
 # Dockprom-AI: AI-Powered Observability Stack
 
-[![Unit Tests](https://github.com/grafana/mcp-grafana/actions/workflows/unit.yml/badge.svg)](https://github.com/grafana/mcp-grafana/actions/workflows/unit.yml)
-[![Integration Tests](https://github.com/grafana/mcp-grafana/actions/workflows/integration.yml/badge.svg)](https://github.com/grafana/mcp-grafana/actions/workflows/integration.yml)
-[![E2E Tests](https://github.com/grafana/mcp-grafana/actions/workflows/e2e.yml/badge.svg)](https://github.com/grafana/mcp-grafana/actions/workflows/e2e.yml)
+[![License: MIT](https://img.shields.io/github/license/waitesgithub/dockprom-ai)](LICENSE)
+[![Last Commit](https://img.shields.io/github/last-commit/waitesgithub/dockprom-ai)](https://github.com/waitesgithub/dockprom-ai/commits)
+[![Repo Size](https://img.shields.io/github/repo-size/waitesgithub/dockprom-ai)](https://github.com/waitesgithub/dockprom-ai)
 
-A comprehensive monitoring solution for Docker hosts and containers with AI-powered observability, combining:
+A Docker Compose based monitoring and observability stack for Docker hosts and containers, with an optional AI integration through the Grafana MCP Server. This is a **configuration/deployment project** (YAML-based, no application code): everything is defined in `docker-compose.yaml` and the accompanying configuration files.
+
+Services deployed by `docker-compose.yaml`:
 - **Prometheus** - Metrics database
 - **Grafana** - Visualization and dashboards
 - **Loki** - Log aggregation
 - **Tempo** - Distributed tracing
 - **OpenTelemetry Collector** - OTLP ingest
-- **cAdvisor** - Container metrics
-- **NodeExporter** - Host metrics
-- **Grafana MCP Server** - AI-powered Grafana integration
-- **Ollama Gateway** - LLM inference with observability
-- **AlertManager** - Alert management
+- **Node Exporter** - Host metrics
+- **AlertManager** - Alert routing and notifications
+
+## Repository Information
+
+- **Fork of:** [cmakkaya/Observability_3_0_AI-PoweredAPM-AI_Stack-Observability_Stack](https://github.com/cmakkaya/Observability_3_0_AI-PoweredAPM-AI_Stack-Observability_Stack)
+- **License:** [MIT](LICENSE)
+- **Created:** December 16, 2025
+- **Language composition:** YAML / configuration files (no compiled or scripted source code)
 
 ## Quick Start
 
@@ -31,34 +37,52 @@ Clone this repository and start the monitoring stack:
 git clone https://github.com/waitesgithub/dockprom-ai
 cd dockprom-ai
 
-ADMIN_USER='admin' ADMIN_PASSWORD='admin' ADMIN_PASSWORD_HASH='$2a$14$1l.IozJx7xQRVmlkEQ32OeEEfP5mRxTpbDTCTcXRqn19gXD8YK1pO' docker-compose up -d
+docker-compose up -d
 ```
 
-**Note:** Caddy v2 requires passwords as hash values. The above hash corresponds to password 'admin'. To generate a new hash:
-
-```bash
-docker run --rm caddy caddy hash-password --plaintext 'YOUR_PASSWORD'
-```
+The configuration files listed in [Configuration Files](#configuration-files) are mounted into the containers, so they must exist next to `docker-compose.yaml` before starting the stack.
 
 ## Services
 
-The stack includes the following services:
+The stack (network `monitoring`) includes the following services:
 
-| Service | URL | Description |
+| Service | URL / Port | Description |
 |---------|-----|-------------|
-| **Grafana** | `http://<host-ip>:3000` | Visualization and dashboards (admin/admin) |
-| **Prometheus** | `http://<host-ip>:9090` | Metrics database and queries |
-| **Prometheus Pushgateway** | `http://<host-ip>:9091` | Push acceptor for ephemeral/batch jobs |
-| **AlertManager** | `http://<host-ip>:9093` | Alert management and routing |
+| **Grafana** | `http://<host-ip>:3000` | Visualization and dashboards |
+| **Prometheus** | `http://<host-ip>:9090` | Metrics database and queries (90d retention, lifecycle API enabled) |
+| **Node Exporter** | `http://<host-ip>:9100` | Host metrics collector (reads `/proc`, `/sys`, `/`) |
+| **AlertManager** | `http://<host-ip>:9093` | Alert routing and email notifications |
 | **Loki** | `http://<host-ip>:3100` | Log aggregation database |
-| **Tempo** | `http://<host-ip>:3200` | Distributed tracing database |
-| **OpenTelemetry Collector** | `http://<host-ip>:4318` (HTTP) | OTLP metrics, logs, and traces ingest |
-| **OpenTelemetry Collector** | `http://<host-ip>:4317` (gRPC) | OTLP ingest |
-| **Ollama Gateway** | `http://<host-ip>:11435` | HTTP proxy with tracing/metrics for Ollama |
-| **NodeExporter** | - | Host metrics collector |
-| **cAdvisor** | - | Container metrics collector |
-| **Alloy** | - | Docker logs collector → Loki |
-| **Caddy** | - | Reverse proxy with basic auth |
+| **Tempo** | `http://<host-ip>:3200` | Distributed tracing database (HTTP API) |
+| **OpenTelemetry Collector** | `4317` (OTLP gRPC), `4318` (OTLP HTTP) | OTLP traces, metrics, and logs ingest |
+
+### OpenTelemetry Collector ports
+
+| Port | Purpose |
+|------|---------|
+| 4317 | OTLP gRPC receiver |
+| 4318 | OTLP HTTP receiver |
+| 8889 / 8890 | Prometheus metrics exposed by the collector |
+| 13133 | health_check extension |
+| 1888 | pprof extension |
+| 55679 | zpages extension |
+
+### Volumes
+
+`prometheus_data`, `grafana-data`, `loki-data`, `tempo-data`, `otel-data`.
+
+## Configuration Files
+
+| File | Used by | Purpose |
+|------|---------|---------|
+| `docker-compose.yaml` | Docker Compose | Service, network, and volume definitions |
+| `prometheus.yml` | Prometheus | Scrape configuration |
+| `alert-rules.yml` | Prometheus | Alerting rules |
+| `alert-config.yaml` | AlertManager | Routes and receivers |
+| `alert-email-template.tmpl` | AlertManager | Email notification template (mounted as `/etc/alertmanager/email-template.tmpl`) |
+| `tempo.yaml` | Tempo | Tracing backend configuration |
+| `loki-config.yaml` | Loki | Log storage configuration |
+| `otel-collector-config.yaml` | OpenTelemetry Collector | Receivers, processors, and exporters |
 
 ## AI-Powered Observability with Grafana MCP Server
 
@@ -116,36 +140,13 @@ Dockprom-AI integrates the **Grafana MCP Server**, enabling AI agents (Claude, C
 - **Manage permissions** - View and manage resource permissions
 - **Get user/org info** - Current identity and capabilities
 
-## AI Observability: Ollama + OTEL + Loki + Tempo
+## AI Observability: OTEL + Loki + Tempo
 
-Dockprom-AI extends the stack with a **drop-in observability bundle** for AI/LLM applications:
+The stack provides an observability backend for AI/LLM applications:
 
-- **Traces** - Apps send OTLP traces → stored in Tempo → viewed in Grafana
-- **Logs** - Docker logs collected by Alloy → stored in Loki → viewed in Grafana
-- **Metrics** - OTLP metrics sent to OTel Collector → exposed for Prometheus
-- **Ollama Gateway** - Envoy proxy with automatic request tracing and metrics
-
-### Make Host Ollama Reachable
-
-The gateway runs in Docker and forwards to `host.docker.internal:11434`. On Linux, ensure Ollama listens on a non-loopback interface:
-
-```bash
-export OLLAMA_HOST=0.0.0.0:11434
-ollama serve
-```
-
-### Use the Ollama Gateway
-
-Point your applications to:
-
-```
-http://<host-ip>:11435
-```
-
-This automatically provides:
-- **Tempo traces** for each request
-- **Prometheus metrics** for RPS, latency, and errors
-- **Loki logs** for gateway and access logs
+- **Traces** - Apps send OTLP traces to the OTel Collector → stored in Tempo → viewed in Grafana
+- **Logs** - Logs stored in Loki → viewed in Grafana
+- **Metrics** - OTLP metrics sent to the OTel Collector → exposed for Prometheus
 
 ### Instrument Your Application
 
@@ -159,7 +160,7 @@ export OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:4318"
 export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
 ```
 
-**For apps in Docker (same `monitor-net` network):**
+**For apps in Docker (same `monitoring` network):**
 
 ```bash
 OTEL_SERVICE_NAME=my-app
@@ -169,67 +170,34 @@ OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 
 ## Setup Grafana
 
-Navigate to `http://<host-ip>:3000` and login with **admin / admin**. 
+Navigate to `http://<host-ip>:3000` and login with the Grafana defaults (**admin / admin**, you will be prompted to change the password).
 
-**Change credentials by modifying your compose file or config:**
+To change credentials, add environment variables to the `grafana` service in `docker-compose.yaml`, for example:
 
 ```yaml
 grafana:
   image: grafana/grafana:latest
-  env_file:
-    - config
+  environment:
+    - GF_SECURITY_ADMIN_USER=admin
+    - GF_SECURITY_ADMIN_PASSWORD=changeme
+    - GF_USERS_ALLOW_SIGN_UP=false
 ```
 
-**Config file format:**
+### Datasources
 
-```yaml
-GF_SECURITY_ADMIN_USER=admin
-GF_SECURITY_ADMIN_PASSWORD=changeme
-GF_USERS_ALLOW_SIGN_UP=false
-```
+Datasources are not provisioned automatically. Add them in Grafana (Connections → Data sources) using the container names on the `monitoring` network:
 
-### Pre-configured Datasources
-
-Grafana includes a pre-configured Prometheus datasource:
-
-- **Name:** Prometheus
-- **Type:** Prometheus
-- **URL:** `http://prometheus:9090`
-- **Access:** proxy
-
-Additional datasources:
+- **Prometheus** - `http://prometheus:9090`
 - **Loki** - `http://loki:3100`
 - **Tempo** - `http://tempo:3200`
 
-### Pre-configured Dashboards
-
-**Docker Host Dashboard**
-- Server uptime, CPU, and memory metrics
-- System load, processes, and I/O
-- CPU usage by mode
-- Memory and storage usage
-- Network metrics by device
-- Swap usage and activity
-
-**Docker Containers Dashboard**
-- Total containers CPU, memory, and storage
-- Running containers and system load
-- Container CPU usage
-- Container memory usage
-- Container network I/O
-
-**Monitor Services Dashboard**
-- Prometheus uptime and storage metrics
-- Prometheus ingestion rate and scrape metrics
-- Alert tracking and performance graphs
-
 ## Define Alerts
 
-Three alert groups are configured in [prometheus/alert.rules](prometheus/alert.rules):
+Prometheus loads alerting rules from `alert-rules.yml`. Example rule groups:
 
 ### Monitoring Services Alerts
 
-Alert if monitoring targets (node-exporter, cAdvisor) are down:
+Alert if monitoring targets (e.g. node-exporter) are down:
 
 ```yaml
 - alert: monitor_service_down
@@ -333,7 +301,7 @@ AlertManager handles alerts sent by Prometheus and can route them to:
 - Webhooks
 - And many more
 
-Configure receivers in [alertmanager/config.yml](alertmanager/config.yml).
+Receivers are configured in `alert-config.yaml`; the email template is `alert-email-template.tmpl`.
 
 ### Slack Integration
 
@@ -355,21 +323,11 @@ receivers:
 
 ### Reload Alert Rules
 
-Reload alert rules without restarting:
+Prometheus runs with `--web.enable-lifecycle`, so rules can be reloaded without restarting:
 
 ```bash
-curl -X POST http://admin:admin@<host-ip>:9090/-/reload
+curl -X POST http://<host-ip>:9090/-/reload
 ```
-
-## Pushing Metrics to Pushgateway
-
-Push metrics from batch jobs or services:
-
-```bash
-echo "some_metric 3.14" | curl --data-binary @- http://user:password@localhost:9091/metrics/job/some_job
-```
-
-Replace `user:password` with your admin credentials.
 
 ## Grafana MCP Server Configuration
 
@@ -460,7 +418,7 @@ If upgrading Grafana to v5.2.2+, the user ID changed from 104 to 472.
 ```bash
 docker-compose down
 
-# Modify docker-compose.yml to include 'user: root' for grafana service
+# Modify docker-compose.yaml to include 'user: root' for grafana service
 docker-compose up -d
 
 docker exec -it --user root grafana bash
@@ -475,7 +433,7 @@ Contributions are welcome! Please feel free to submit pull requests or open issu
 
 ## License
 
-This project is provided as-is. Grafana components are licensed under their respective licenses.
+This project is licensed under the [MIT License](LICENSE). Grafana, Prometheus, and other components are licensed under their respective licenses.
 
 ## Resources
 
