@@ -16,6 +16,8 @@ volumes:
     name: tempo-data
   otel-data:
     name: otel-data
+  victoria-data:
+    name: victoria-data
     
 services:
   prometheus:
@@ -129,4 +131,18 @@ services:
       - 4318:4318 # OTLP http receiver
       - 55679:55679 # zpages extension        
     networks:
-      - monitoring        
+      - monitoring
+
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.154.1  # https://github.com/VictoriaMetrics/VictoriaMetrics/releases/tag/v1.154.1
+    container_name: victoriametrics
+    restart: unless-stopped
+    volumes:
+      - victoria-data:/victoria-metrics-data
+    command:
+      - '-storageDataPath=/victoria-metrics-data'
+      - '-retentionPeriod=90d'   # match Prometheus retention
+    ports:
+      - "8428:8428"   # HTTP API, UI and Prometheus-compatible query endpoint
+    networks:
+      - monitoring

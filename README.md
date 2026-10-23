@@ -9,6 +9,7 @@ A comprehensive monitoring solution for Docker hosts and containers with AI-powe
 - **Grafana** - Visualization and dashboards
 - **Loki** - Log aggregation
 - **Tempo** - Distributed tracing
+- **VictoriaMetrics** - Long-term metrics storage (Prometheus remote write target)
 - **OpenTelemetry Collector** - OTLP ingest
 - **cAdvisor** - Container metrics
 - **NodeExporter** - Host metrics
@@ -50,6 +51,7 @@ The stack includes the following services:
 | **Prometheus** | `http://<host-ip>:9090` | Metrics database and queries |
 | **Prometheus Pushgateway** | `http://<host-ip>:9091` | Push acceptor for ephemeral/batch jobs |
 | **AlertManager** | `http://<host-ip>:9093` | Alert management and routing |
+| **VictoriaMetrics** | `http://<host-ip>:8428` | Long-term metrics storage, Prometheus-compatible API and UI (`/vmui`) |
 | **Loki** | `http://<host-ip>:3100` | Log aggregation database |
 | **Tempo** | `http://<host-ip>:3200` | Distributed tracing database |
 | **OpenTelemetry Collector** | `http://<host-ip>:4318` (HTTP) | OTLP metrics, logs, and traces ingest |
@@ -59,6 +61,40 @@ The stack includes the following services:
 | **cAdvisor** | - | Container metrics collector |
 | **Alloy** | - | Docker logs collector → Loki |
 | **Caddy** | - | Reverse proxy with basic auth |
+
+## How the Services Work Together
+
+| Service | Role | Recommended configuration |
+|---------|------|---------------------------|
+| **Prometheus** | Scrapes metrics (node-exporter, otel-collector, itself) and evaluates alert rules | Keep 90d local retention; add a `remote_write` to VictoriaMetrics; enable `--web.enable-lifecycle` for reloads |
+| **VictoriaMetrics** | Long-term, compressed metrics storage; accepts Prometheus remote write and serves PromQL/MetricsQL | Set `-retentionPeriod` to your long-term needs; keep data on the `victoria-data` volume |
+| **Grafana** | Dashboards and exploration across all datasources | Change the default admin password; provision datasources |
+| **AlertManager** | Receives alerts from Prometheus and routes to email/Slack/etc. | Configure receivers in `alert-config.yaml` |
+| **Node Exporter** | Host CPU, memory, disk and network metrics | Mount `/proc`, `/sys`, `/` read-only |
+| **Loki** | Log storage | Configure in `loki-config.yaml`; size retention to disk |
+| **Tempo** | Trace storage | Configure in `tempo.yaml` |
+| **OpenTelemetry Collector** | Single OTLP ingest point (4317 gRPC / 4318 HTTP) for traces, logs and metrics | Point apps to it with `OTEL_EXPORTER_OTLP_ENDPOINT` |
+
+Data flow: applications send OTLP to the Collector, which forwards traces to Tempo, logs to Loki and exposes metrics for Prometheus. Prometheus scrapes targets, fires alerts to AlertManager, and forwards samples to VictoriaMetrics for long-term storage.
+
+### Using VictoriaMetrics with Prometheus
+
+Add to `prometheus.yml`:
+
+```yaml
+remote_write:
+  - url: http://victoriametrics:8428/api/v1/write
+```
+
+In Grafana, add a Prometheus-type datasource with URL `http://victoriametrics:8428` to query the long-term data.
+
+### General recommendations
+
+- Keep all services on the shared `monitoring` network and refer to them by container name.
+- Use the pinned image versions; update them deliberately (see Pinned Versions).
+- Do not expose ports publicly without the Caddy reverse proxy and authentication.
+- Retention: use the same value (90d) for Prometheus and VictoriaMetrics unless you want VictoriaMetrics to keep more history.
+- Back up the named volumes (`prometheus_data`, `grafana-data`, `loki-data`, `tempo-data`, `victoria-data`).
 
 ## Pinned Versions
 
@@ -78,6 +114,7 @@ All image tags are pinned to exact versions from official GitHub releases (no `l
 | Ollama | `ollama/ollama` | 0.40.9 | - | [link](https://github.com/ollama/ollama/releases) |
 | Caddy | `caddy` | 2.11.7 | Oct 3, 2026 | [link](https://github.com/caddyserver/caddy/releases) |
 | mcp-grafana | `grafana/mcp-grafana` | 2.1.1 | - | [link](https://github.com/grafana/mcp-grafana/releases) |
+| VictoriaMetrics | `victoriametrics/victoria-metrics` | v1.154.1 | - | [link](https://github.com/VictoriaMetrics/VictoriaMetrics/releases) |
 
 Pushgateway, Logporter, Ollama, Caddy and mcp-grafana are not currently defined in `compose.yml`; use the versions above when adding them.
 
