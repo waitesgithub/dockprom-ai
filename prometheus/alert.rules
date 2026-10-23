@@ -1,0 +1,11 @@
+groups:
+  - name: monitoring
+    rules:
+      - alert: MonitorTargetDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Monitoring target {{ $labels.job }} is down"
+          description: "{{ $labels.instance }} has been unreachable for more than one minute."
