@@ -62,7 +62,7 @@ The stack includes the following services:
 
 ## Pinned Versions
 
-All image tags are pinned to exact versions from official GitHub releases (no `latest` tags), so deployments are reproducible. Each image line in `docker-compose.yaml` has a comment linking to its release.
+All image tags are pinned to exact versions from official GitHub releases (no `latest` tags), so deployments are reproducible. Each image line in `compose.yml` has a comment linking to its release.
 
 | Service | Image | Version | Released | Releases |
 |---------|-------|---------|----------|----------|
@@ -79,7 +79,7 @@ All image tags are pinned to exact versions from official GitHub releases (no `l
 | Caddy | `caddy` | 2.11.7 | Oct 3, 2026 | [link](https://github.com/caddyserver/caddy/releases) |
 | mcp-grafana | `grafana/mcp-grafana` | 2.1.1 | - | [link](https://github.com/grafana/mcp-grafana/releases) |
 
-Pushgateway, Logporter, Ollama, Caddy and mcp-grafana are not currently defined in `docker-compose.yaml`; use the versions above when adding them.
+Pushgateway, Logporter, Ollama, Caddy and mcp-grafana are not currently defined in `compose.yml`; use the versions above when adding them.
 
 ### Major version upgrades
 
@@ -94,7 +94,7 @@ Review the upstream release notes and migrate configs (`loki-config.yaml`, `temp
 Tags follow upstream semantic versioning exactly as published (some images omit the `v` prefix). To update a service:
 
 1. Check the releases page linked above and read the changelog.
-2. Edit the `image:` tag and its release comment in `docker-compose.yaml`, and update this table.
+2. Edit the `image:` tag and its release comment in `compose.yml`, and update this table.
 3. Run `docker-compose pull <service> && docker-compose up -d <service>`.
 
 ### Compatibility notes
@@ -503,7 +503,7 @@ If upgrading Grafana to v5.2.2+, the user ID changed from 104 to 472.
 ```bash
 docker-compose down
 
-# Modify docker-compose.yml to include 'user: root' for grafana service
+# Modify compose.yml to include 'user: root' for grafana service
 docker-compose up -d
 
 docker exec -it --user root grafana bash
