@@ -55,10 +55,15 @@ The stack includes the following services:
 | **OpenTelemetry Collector** | `http://<host-ip>:4318` (HTTP) | OTLP metrics, logs, and traces ingest |
 | **OpenTelemetry Collector** | `http://<host-ip>:4317` (gRPC) | OTLP ingest |
 | **Ollama Gateway** | `http://<host-ip>:11435` | HTTP proxy with tracing/metrics for Ollama |
+| **Grafana MCP Server** | `http://<host-ip>:8000/sse` | MCP (SSE) endpoint for AI agents; built from `./mcp-grafana` |
 | **NodeExporter** | - | Host metrics collector |
 | **cAdvisor** | - | Container metrics collector |
 | **Alloy** | - | Docker logs collector → Loki |
 | **Caddy** | - | Reverse proxy with basic auth |
+
+## Repository Layout
+
+Core dockprom files (from [stefanprodan/dockprom](https://github.com/stefanprodan/dockprom)): `prometheus/`, `alertmanager/`, `caddy/`, `grafana/provisioning/`, `helpers/`, `screens/`, `config`, and `docker-compose.exporters.yml`. The Grafana MCP server source ([grafana/mcp-grafana](https://github.com/grafana/mcp-grafana)) lives in `mcp-grafana/` and is built by the `mcp-grafana` compose service, which talks to Grafana using `ADMIN_USER`/`ADMIN_PASSWORD`.
 
 ## AI-Powered Observability with Grafana MCP Server
 

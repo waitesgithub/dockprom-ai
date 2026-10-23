@@ -1,0 +1,654 @@
+//go:build unit
+// +build unit
+
+package mcpgrafana
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+type testToolParams struct {
+	Name     string `json:"name" jsonschema:"required,description=The name parameter"`
+	Value    int    `json:"value" jsonschema:"required,description=The value parameter"`
+	Optional bool   `json:"optional,omitempty" jsonschema:"description=An optional parameter"`
+}
+
+func testToolHandler(ctx context.Context, params testToolParams) (*mcp.CallToolResult, error) {
+	if params.Name == "error" {
+		return nil, errors.New("test error")
+	}
+	return NewToolResultText(params.Name + ": " + string(rune(params.Value))), nil
+}
+
+type emptyToolParams struct{}
+
+func emptyToolHandler(ctx context.Context, params emptyToolParams) (*mcp.CallToolResult, error) {
+	return NewToolResultText("empty"), nil
+}
+
+func stringToolHandler(ctx context.Context, params testToolParams) (string, error) {
+	if params.Name == "error" {
+		return "", errors.New("test error")
+	}
+	if params.Name == "empty" {
+		return "", nil
+	}
+	return params.Name + ": " + string(rune(params.Value)), nil
+}
+
+func stringPtrToolHandler(ctx context.Context, params testToolParams) (*string, error) {
+	if params.Name == "error" {
+		return nil, errors.New("test error")
+	}
+	if params.Name == "nil" {
+		return nil, nil
+	}
+	if params.Name == "empty" {
+		empty := ""
+		return &empty, nil
+	}
+	result := params.Name + ": " + string(rune(params.Value))
+	return &result, nil
+}
+
+type TestResult struct {
+	Name  string `json:"name"`
+	Value int    `json:"value"`
+}
+
+func structToolHandler(ctx context.Context, params testToolParams) (TestResult, error) {
+	if params.Name == "error" {
+		return TestResult{}, errors.New("test error")
+	}
+	return TestResult{
+		Name:  params.Name,
+		Value: params.Value,
+	}, nil
+}
+
+func structPtrToolHandler(ctx context.Context, params testToolParams) (*TestResult, error) {
+	if params.Name == "error" {
+		return nil, errors.New("test error")
+	}
+	if params.Name == "nil" {
+		return nil, nil
+	}
+	return &TestResult{
+		Name:  params.Name,
+		Value: params.Value,
+	}, nil
+}
+
+func sliceToolHandler(ctx context.Context, params testToolParams) ([]TestResult, error) {
+	if params.Name == "error" {
+		return nil, errors.New("test error")
+	}
+	if params.Name == "nil" {
+		return nil, nil
+	}
+	if params.Name == "empty" {
+		return []TestResult{}, nil
+	}
+	return []TestResult{{Name: params.Name, Value: params.Value}}, nil
+}
+
+func TestConvertTool(t *testing.T) {
+	t.Run("valid handler conversion", func(t *testing.T) {
+		tool, handler, err := ConvertTool("test_tool", "A test tool", testToolHandler)
+
+		require.NoError(t, err)
+		require.NotNil(t, tool)
+		require.NotNil(t, handler)
+
+		assert.Equal(t, "test_tool", tool.Name)
+		assert.Equal(t, "A test tool", tool.Description)
+
+		toolJSON, err := json.Marshal(tool)
+		require.NoError(t, err)
+
+		var toolData map[string]any
+		err = json.Unmarshal(toolJSON, &toolData)
+		require.NoError(t, err)
+
+		inputSchema, ok := toolData["inputSchema"].(map[string]any)
+		require.True(t, ok, "inputSchema should be a map")
+		assert.Equal(t, "object", inputSchema["type"])
+
+		properties, ok := inputSchema["properties"].(map[string]any)
+		require.True(t, ok, "properties should be a map")
+		assert.Contains(t, properties, "name")
+		assert.Contains(t, properties, "value")
+		assert.Contains(t, properties, "optional")
+
+		ctx := context.Background()
+		request := newCallToolRequest("test_tool", map[string]any{
+			"name":  "test",
+			"value": 65,
+		})
+
+		result, err := handler(ctx, request)
+		require.NoError(t, err)
+		require.Len(t, result.Content, 1)
+		resultString, ok := result.Content[0].(*mcp.TextContent)
+		require.True(t, ok)
+		assert.Equal(t, "test: A", resultString.Text)
+
+		errorRequest := newCallToolRequest("test_tool", map[string]any{
+			"name":  "error",
+			"value": 66,
+		})
+
+		result, err = handler(ctx, errorRequest)
+		assert.NoError(t, err)
+		require.NotNil(t, result)
+		assert.True(t, result.IsError)
+		resultString, ok = result.Content[0].(*mcp.TextContent)
+		require.True(t, ok)
+		assert.Equal(t, "test error", resultString.Text)
+	})
+
+	t.Run("empty handler params", func(t *testing.T) {
+		tool, handler, err := ConvertTool("empty", "description", emptyToolHandler)
+
+		require.NoError(t, err)
+		require.NotNil(t, tool)
+		require.NotNil(t, handler)
+
+		assert.Equal(t, "empty", tool.Name)
+		assert.Equal(t, "description", tool.Description)
+
+		toolJSON, err := json.Marshal(tool)
+		require.NoError(t, err)
+
+		var toolData map[string]any
+		err = json.Unmarshal(toolJSON, &toolData)
+		require.NoError(t, err)
+
+		inputSchema, ok := toolData["inputSchema"].(map[string]any)
+		require.True(t, ok, "inputSchema should be a map")
+		assert.Equal(t, "object", inputSchema["type"])
+
+		properties, ok := inputSchema["properties"].(map[string]any)
+		require.True(t, ok, "properties should be a map")
+		assert.Len(t, properties, 0)
+
+		ctx := context.Background()
+		request := newCallToolRequest("empty", nil)
+		result, err := handler(ctx, request)
+		require.NoError(t, err)
+		require.Len(t, result.Content, 1)
+		resultString, ok := result.Content[0].(*mcp.TextContent)
+		require.True(t, ok)
+		assert.Equal(t, "empty", resultString.Text)
+	})
+
+	t.Run("string return type", func(t *testing.T) {
+		_, handler, err := ConvertTool("string_tool", "A string tool", stringToolHandler)
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		request := newCallToolRequest("string_tool", map[string]any{
+			"name":  "test",
+			"value": 65,
+		})
+
+		result, err := handler(ctx, request)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Len(t, result.Content, 1)
+		resultString, ok := result.Content[0].(*mcp.TextContent)
+		require.True(t, ok)
+		assert.Equal(t, "test: A", resultString.Text)
+
+		emptyRequest := newCallToolRequest("string_tool", map[string]any{
+			"name":  "empty",
+			"value": 65,
+		})
+
+		result, err = handler(ctx, emptyRequest)
+		require.NoError(t, err)
+		require.NotNil(t, result, "empty string should return non-nil result")
+		require.Len(t, result.Content, 1)
+		emptyText, ok := result.Content[0].(*mcp.TextContent)
+		require.True(t, ok)
+		assert.Equal(t, "", emptyText.Text)
+
+		errorRequest := newCallToolRequest("string_tool", map[string]any{
+			"name":  "error",
+			"value": 65,
+		})
+
+		result, err = handler(ctx, errorRequest)
+		assert.NoError(t, err)
+		require.NotNil(t, result)
+		assert.True(t, result.IsError)
+		resultString, ok = result.Content[0].(*mcp.TextContent)
+		require.True(t, ok)
+		assert.Equal(t, "test error", resultString.Text)
+	})
+
+	t.Run("string pointer return type", func(t *testing.T) {
+		_, handler, err := ConvertTool("string_ptr_tool", "A string pointer tool", stringPtrToolHandler)
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		request := newCallToolRequest("string_ptr_tool", map[string]any{
+			"name":  "test",
+			"value": 65,
+		})
+
+		result, err := handler(ctx, request)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Len(t, result.Content, 1)
+		resultString, ok := result.Content[0].(*mcp.TextContent)
+		require.True(t, ok)
+		assert.Equal(t, "test: A", resultString.Text)
+
+		nilRequest := newCallToolRequest("string_ptr_tool", map[string]any{
+			"name":  "nil",
+			"value": 65,
+		})
+
+		result, err = handler(ctx, nilRequest)
+		require.NoError(t, err)
+		require.NotNil(t, result, "nil pointer should return a non-nil result")
+		require.Len(t, result.Content, 1)
+		nullText, ok := result.Content[0].(*mcp.TextContent)
+		require.True(t, ok)
+		assert.Equal(t, "null", nullText.Text)
+
+		emptyRequest := newCallToolRequest("string_ptr_tool", map[string]any{
+			"name":  "empty",
+			"value": 65,
+		})
+
+		result, err = handler(ctx, emptyRequest)
+		require.NoError(t, err)
+		require.NotNil(t, result, "empty *string should return non-nil result")
+		require.Len(t, result.Content, 1)
+		emptyText, ok := result.Content[0].(*mcp.TextContent)
+		require.True(t, ok)
+		assert.Equal(t, "", emptyText.Text)
+
+		errorRequest := newCallToolRequest("string_ptr_tool", map[string]any{
+			"name":  "error",
+			"value": 65,
+		})
+
+		result, err = handler(ctx, errorRequest)
+		assert.NoError(t, err)
+		require.NotNil(t, result)
+		assert.True(t, result.IsError)
+		resultString, ok = result.Content[0].(*mcp.TextContent)
+		require.True(t, ok)
+		assert.Equal(t, "test error", resultString.Text)
+	})
+
+	t.Run("struct return type", func(t *testing.T) {
+		_, handler, err := ConvertTool("struct_tool", "A struct tool", structToolHandler)
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		request := newCallToolRequest("struct_tool", map[string]any{
+			"name":  "test",
+			"value": 65,
+		})
+
+		result, err := handler(ctx, request)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Len(t, result.Content, 1)
+		resultString, ok := result.Content[0].(*mcp.TextContent)
+		require.True(t, ok)
+		assert.Contains(t, resultString.Text, `"name":"test"`)
+		assert.Contains(t, resultString.Text, `"value":65`)
+
+		errorRequest := newCallToolRequest("struct_tool", map[string]any{
+			"name":  "error",
+			"value": 65,
+		})
+
+		result, err = handler(ctx, errorRequest)
+		assert.NoError(t, err)
+		require.NotNil(t, result)
+		assert.True(t, result.IsError)
+		resultString, ok = result.Content[0].(*mcp.TextContent)
+		require.True(t, ok)
+		assert.Equal(t, "test error", resultString.Text)
+	})
+
+	t.Run("struct pointer return type", func(t *testing.T) {
+		_, handler, err := ConvertTool("struct_ptr_tool", "A struct pointer tool", structPtrToolHandler)
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		request := newCallToolRequest("struct_ptr_tool", map[string]any{
+			"name":  "test",
+			"value": 65,
+		})
+
+		result, err := handler(ctx, request)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Len(t, result.Content, 1)
+		resultString, ok := result.Content[0].(*mcp.TextContent)
+		require.True(t, ok)
+		assert.Contains(t, resultString.Text, `"name":"test"`)
+		assert.Contains(t, resultString.Text, `"value":65`)
+
+		nilRequest := newCallToolRequest("struct_ptr_tool", map[string]any{
+			"name":  "nil",
+			"value": 65,
+		})
+
+		result, err = handler(ctx, nilRequest)
+		require.NoError(t, err)
+		require.NotNil(t, result, "nil pointer should return a non-nil result")
+		require.Len(t, result.Content, 1)
+		nullText, ok := result.Content[0].(*mcp.TextContent)
+		require.True(t, ok)
+		assert.Equal(t, "null", nullText.Text)
+
+		errorRequest := newCallToolRequest("struct_ptr_tool", map[string]any{
+			"name":  "error",
+			"value": 65,
+		})
+
+		result, err = handler(ctx, errorRequest)
+		assert.NoError(t, err)
+		require.NotNil(t, result)
+		assert.True(t, result.IsError)
+		resultString, ok = result.Content[0].(*mcp.TextContent)
+		require.True(t, ok)
+		assert.Equal(t, "test error", resultString.Text)
+	})
+
+	t.Run("slice return type - nil slice returns non-nil result", func(t *testing.T) {
+		_, handler, err := ConvertTool("slice_tool", "A slice tool", sliceToolHandler)
+		require.NoError(t, err)
+
+		ctx := context.Background()
+
+		nilRequest := newCallToolRequest("slice_tool", map[string]any{
+			"name":  "nil",
+			"value": 1,
+		})
+
+		result, err := handler(ctx, nilRequest)
+		require.NoError(t, err)
+		require.NotNil(t, result, "nil slice must return non-nil result")
+
+		emptyRequest := newCallToolRequest("slice_tool", map[string]any{
+			"name":  "empty",
+			"value": 1,
+		})
+
+		result, err = handler(ctx, emptyRequest)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Len(t, result.Content, 1)
+		resultString, ok := result.Content[0].(*mcp.TextContent)
+		require.True(t, ok)
+		assert.Equal(t, "[]", resultString.Text)
+
+		normalRequest := newCallToolRequest("slice_tool", map[string]any{
+			"name":  "test",
+			"value": 42,
+		})
+
+		result, err = handler(ctx, normalRequest)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Len(t, result.Content, 1)
+		resultString, ok = result.Content[0].(*mcp.TextContent)
+		require.True(t, ok)
+		assert.Contains(t, resultString.Text, `"name":"test"`)
+		assert.Contains(t, resultString.Text, `"value":42`)
+	})
+
+	t.Run("invalid handler types", func(t *testing.T) {
+		wrongSecondArgFunc := func(ctx context.Context, s string) (*mcp.CallToolResult, error) {
+			return nil, nil
+		}
+		_, _, err := ConvertTool("invalid", "description", wrongSecondArgFunc)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "second argument must be a struct")
+	})
+
+	t.Run("handler execution with invalid arguments", func(t *testing.T) {
+		_, handler, err := ConvertTool("test_tool", "A test tool", testToolHandler)
+		require.NoError(t, err)
+
+		// Test with malformed JSON — arguments are json.RawMessage in go-sdk
+		invalidRequest := &mcp.CallToolRequest{
+			Params: &mcp.CallToolParamsRaw{
+				Name:      "test_tool",
+				Arguments: json.RawMessage(`{invalid json`),
+			},
+		}
+
+		_, err = handler(context.Background(), invalidRequest)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "unmarshal args")
+
+		// Test with type mismatch: surfaced as a structured tool error
+		mismatchRequest := newCallToolRequest("test_tool", map[string]any{
+			"name":  123,
+			"value": "not an int",
+		})
+
+		mismatchResult, err := handler(context.Background(), mismatchRequest)
+		require.NoError(t, err)
+		require.NotNil(t, mismatchResult)
+		assert.True(t, mismatchResult.IsError)
+		mismatchText, ok := mismatchResult.Content[0].(*mcp.TextContent)
+		require.True(t, ok)
+		assert.Contains(t, mismatchText.Text, "invalid arguments")
+	})
+}
+
+func TestCreateJSONSchemaFromHandler(t *testing.T) {
+	schema := createJSONSchemaFromHandler(testToolHandler)
+
+	assert.Equal(t, "object", schema.Type)
+	assert.Len(t, schema.Required, 2)
+
+	nameProperty, ok := schema.Properties.Get("name")
+	assert.True(t, ok)
+	assert.Equal(t, "string", nameProperty.Type)
+	assert.Equal(t, "The name parameter", nameProperty.Description)
+
+	valueProperty, ok := schema.Properties.Get("value")
+	assert.True(t, ok)
+	assert.Equal(t, "integer", valueProperty.Type)
+	assert.Equal(t, "The value parameter", valueProperty.Description)
+
+	optionalProperty, ok := schema.Properties.Get("optional")
+	assert.True(t, ok)
+	assert.Equal(t, "boolean", optionalProperty.Type)
+	assert.Equal(t, "An optional parameter", optionalProperty.Description)
+}
+
+func TestEmptyStructJSONSchema(t *testing.T) {
+	tool, _, err := ConvertTool("empty_tool", "An empty tool", emptyToolHandler)
+	require.NoError(t, err)
+
+	jsonBytes, err := json.Marshal(tool)
+	require.NoError(t, err)
+	t.Logf("Marshaled Tool JSON: %s", string(jsonBytes))
+
+	var unmarshaled map[string]any
+	err = json.Unmarshal(jsonBytes, &unmarshaled)
+	require.NoError(t, err)
+
+	inputSchema, exists := unmarshaled["inputSchema"]
+	assert.True(t, exists, "inputSchema field should exist in tool JSON")
+	assert.NotNil(t, inputSchema, "inputSchema should not be nil")
+
+	inputSchemaMap, ok := inputSchema.(map[string]any)
+	assert.True(t, ok, "inputSchema should be a map")
+
+	assert.Equal(t, "object", inputSchemaMap["type"], "inputSchema type should be object")
+
+	properties, exists := inputSchemaMap["properties"]
+	assert.True(t, exists, "properties field should exist in inputSchema")
+	assert.NotNil(t, properties, "properties should not be nil")
+
+	propertiesMap, ok := properties.(map[string]any)
+	assert.True(t, ok, "properties should be a map")
+	assert.Len(t, propertiesMap, 0, "properties should be an empty map")
+}
+
+func TestValidateNoBooleanSchemas(t *testing.T) {
+	t.Run("rejects bare true in properties", func(t *testing.T) {
+		input := `{"type":"object","properties":{"model":true,"name":{"type":"string"}}}`
+		err := validateNoBooleanSchemas("test_tool", []byte(input))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "bare boolean schema")
+		assert.Contains(t, err.Error(), "test_tool")
+		assert.Contains(t, err.Error(), "properties.model")
+	})
+
+	t.Run("rejects bare false in properties", func(t *testing.T) {
+		input := `{"type":"object","properties":{"blocked":false}}`
+		err := validateNoBooleanSchemas("test_tool", []byte(input))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "bare boolean schema")
+	})
+
+	t.Run("rejects bare true in additionalProperties", func(t *testing.T) {
+		input := `{"type":"object","properties":{},"additionalProperties":true}`
+		err := validateNoBooleanSchemas("test_tool", []byte(input))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "additionalProperties")
+	})
+
+	t.Run("rejects bare true in items", func(t *testing.T) {
+		input := `{"type":"array","items":true}`
+		err := validateNoBooleanSchemas("test_tool", []byte(input))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "items")
+	})
+
+	t.Run("rejects nested bare booleans", func(t *testing.T) {
+		input := `{
+			"type": "object",
+			"properties": {
+				"data": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"model": true,
+							"refId": {"type": "string"}
+						}
+					}
+				}
+			}
+		}`
+		err := validateNoBooleanSchemas("test_tool", []byte(input))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "model")
+	})
+
+	t.Run("rejects bare booleans in allOf/anyOf/oneOf", func(t *testing.T) {
+		input := `{"allOf":[true,{"type":"string"}]}`
+		err := validateNoBooleanSchemas("test_tool", []byte(input))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "allOf")
+	})
+
+	t.Run("accepts valid schemas without bare booleans", func(t *testing.T) {
+		input := `{
+			"type": "object",
+			"properties": {
+				"name": {"type": "string", "description": "A name"},
+				"count": {"type": "integer"},
+				"tags": {"type": "array", "items": {"type": "string"}}
+			},
+			"required": ["name"]
+		}`
+		err := validateNoBooleanSchemas("test_tool", []byte(input))
+		assert.NoError(t, err)
+	})
+
+	t.Run("does not flag non-schema boolean values", func(t *testing.T) {
+		input := `{"type":"array","items":{"type":"string"},"uniqueItems":true}`
+		err := validateNoBooleanSchemas("test_tool", []byte(input))
+		assert.NoError(t, err)
+	})
+
+	t.Run("error message points to Mapper as the fix", func(t *testing.T) {
+		input := `{"type":"object","properties":{"data":true}}`
+		err := validateNoBooleanSchemas("my_tool", []byte(input))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "my_tool")
+		assert.Contains(t, err.Error(), "Mapper")
+		assert.Contains(t, err.Error(), "interface{}")
+	})
+}
+
+type interfaceFieldParams struct {
+	Name  string `json:"name" jsonschema:"required,description=A name"`
+	Model any    `json:"model" jsonschema:"description=An arbitrary model"`
+}
+
+func interfaceFieldHandler(ctx context.Context, params interfaceFieldParams) (string, error) {
+	return params.Name, nil
+}
+
+func TestConvertToolHandlesInterfaceFields(t *testing.T) {
+	tool, _, err := ConvertTool("interface_tool", "Tool with interface field", interfaceFieldHandler)
+	require.NoError(t, err)
+
+	var schema map[string]any
+	err = json.Unmarshal(inputSchemaBytes(t, tool), &schema)
+	require.NoError(t, err)
+
+	props := schema["properties"].(map[string]any)
+	model := props["model"]
+	modelObj, ok := model.(map[string]any)
+	require.True(t, ok, "model property should be an object schema, got %T", model)
+	t.Logf("model schema: %v", modelObj)
+}
+
+func TestConvertToolSchemaDisallowsAdditionalProperties(t *testing.T) {
+	tool, _, err := ConvertTool("test_tool", "A test tool", testToolHandler)
+	require.NoError(t, err)
+
+	var schema map[string]any
+	err = json.Unmarshal(inputSchemaBytes(t, tool), &schema)
+	require.NoError(t, err)
+	require.Contains(t, schema, "additionalProperties")
+	assert.Equal(t, false, schema["additionalProperties"])
+}
+
+func TestValidateNoBooleanSchemasAllowsAdditionalPropertiesFalse(t *testing.T) {
+	input := `{"type":"object","properties":{"name":{"type":"string"}},"additionalProperties":false}`
+	err := validateNoBooleanSchemas("test_tool", []byte(input))
+	assert.NoError(t, err)
+}
+
+func TestConvertTool_UnmarshalTypeMismatchReturnsToolErrorNotProtocolError(t *testing.T) {
+	_, handler, err := ConvertTool("test_tool", "A test tool", testToolHandler)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	request := newCallToolRequest("test_tool", map[string]any{
+		"name":  "test",
+		"value": true,
+	})
+
+	result, err := handler(ctx, request)
+	require.NoError(t, err, "an argument type mismatch must not surface as a JSON-RPC protocol error")
+	require.NotNil(t, result)
+	assert.True(t, result.IsError, "an argument type mismatch must surface as a structured tool error")
+}

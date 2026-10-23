@@ -1,0 +1,181 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    id: 1
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+  - name: Prometheus Demo
+    id: 2
+    uid: prometheus-demo
+    type: prometheus
+    access: proxy
+    url: https://prometheus.demo.prometheus.io
+  - name: Loki
+    id: 3
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    isDefault: false
+  - name: pyroscope
+    uid: pyroscope
+    type: grafana-pyroscope-datasource
+    access: proxy
+    url: http://pyroscope:4040
+    isDefault: false
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    isDefault: false
+  - name: Alertmanager
+    uid: alertmanager
+    type: alertmanager
+    access: proxy
+    url: http://alertmanager:9093
+    jsonData:
+      implementation: prometheus
+    isDefault: false
+    editable: false
+  - name: ClickHouse
+    id: 7
+    uid: clickhouse
+    type: grafana-clickhouse-datasource
+    access: proxy
+    url: http://clickhouse:8123
+    jsonData:
+      defaultDatabase: test
+      port: 9000
+      protocol: native
+      server: clickhouse
+      username: default
+    isDefault: false
+  - name: Elasticsearch
+    id: 8
+    uid: elasticsearch
+    type: elasticsearch
+    access: proxy
+    url: http://elasticsearch:9200
+    jsonData:
+      index: test-logs-*
+      timeField: "@timestamp"
+      esVersion: 8.17.0
+  - name: Elasticsearch Custom Time
+    uid: elasticsearch-custom-time
+    type: elasticsearch
+    access: proxy
+    url: http://elasticsearch:9200
+    jsonData:
+      index: custom-time-logs-*
+      timeField: timestamp
+      esVersion: 8.17.0
+  - name: OpenSearch
+    uid: opensearch
+    type: grafana-opensearch-datasource
+    access: proxy
+    url: http://opensearch:9200
+    jsonData:
+      database: test-logs-*
+      timeField: "@timestamp"
+      flavor: opensearch
+      version: 3.6.0
+      pplEnabled: false
+  - name: OpenSearch Custom Time
+    uid: opensearch-custom-time
+    type: grafana-opensearch-datasource
+    access: proxy
+    url: http://opensearch:9200
+    jsonData:
+      database: custom-time-logs-*
+      timeField: timestamp
+      flavor: opensearch
+      version: 3.6.0
+      pplEnabled: false
+  - name: Quickwit
+    uid: quickwit
+    type: quickwit-quickwit-datasource
+    access: proxy
+    url: http://quickwit:7280/api/v1
+    jsonData:
+      index: test-logs
+  - name: InfluxDB Flux
+    uid: influxdb-flux
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    jsonData:
+      version: Flux
+      organization: mcptests
+      defaultBucket: metrics
+      tlsSkipVerify: true
+    secureJsonData:
+      token: mcptests-admin-token
+    isDefault: false
+  - name: InfluxDB InfluxQL
+    uid: influxdb-influxql
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    database: metrics
+    jsonData:
+      version: InfluxQL
+      httpMode: GET
+      dbName: metrics
+      httpHeaderName1: Authorization
+    secureJsonData:
+      httpHeaderValue1: Token mcptests-admin-token
+    isDefault: false
+  - name: CloudWatch
+    id: 8
+    uid: cloudwatch
+    type: cloudwatch
+    access: proxy
+    jsonData:
+      defaultRegion: us-east-1
+      authType: keys
+      endpoint: http://localstack:4566
+    secureJsonData:
+      accessKey: test
+      secretKey: test
+    isDefault: false
+  - name: Google Cloud Logging
+    uid: googlecloud-logging
+    type: googlecloud-logging-datasource
+    access: proxy
+    jsonData:
+      authenticationType: gce
+    isDefault: false
+  - name: MySQL
+    uid: mysql
+    type: mysql
+    access: proxy
+    url: mysql:3306
+    database: test
+    user: root
+    secureJsonData:
+      password: rootroot
+    isDefault: false
+  - name: PostgreSQL
+    uid: postgres
+    type: grafana-postgresql-datasource
+    access: proxy
+    url: postgres:5432
+    database: test
+    user: postgres
+    jsonData:
+      sslmode: disable
+    secureJsonData:
+      password: postgres
+    isDefault: false
+  - name: Graphite
+    id: 9
+    uid: graphite
+    type: graphite
+    access: proxy
+    url: http://graphite:80
+    isDefault: false

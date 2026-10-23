@@ -1,0 +1,114 @@
+name: goreleaser
+
+on:
+  push:
+    # run only against tags
+    tags:
+      - "v*"
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write # Keyless cosign signing of the checksums file
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          # Extract the section for this version from CHANGELOG.md.
+          # Matches from "## [X.Y.Z]" until the next "## [" or end of file,
+          # excluding the heading itself and any trailing link references.
+          if [ -f CHANGELOG.md ]; then
+            awk -v ver="$VERSION" '
+              /^## \[/ {
+                if (found) exit
+                if ($0 ~ "## \\[" ver "\\]") found=1
+                next
+              }
+              /^\[.*\]: https:\/\// { next }
+              found { print }
+            ' CHANGELOG.md > /tmp/release-notes.md
+          fi
+
+          # If CHANGELOG.md is missing or has no section for this version, fall back
+          if [ ! -s /tmp/release-notes.md ]; then
+            echo "Release ${GITHUB_REF_NAME}" > /tmp/release-notes.md
+          fi
+
+      # Go, goreleaser, cosign, syft and Node, as pinned in mise.toml and
+      # mise.lock. Go stays on 1.26 there until golang/go#81199 is resolved.
+      - name: Set up mise
+        uses: ./.github/actions/setup-mise
+        with:
+          # Do not use any caches when creating a release.
+          cache: false
+          tools: go goreleaser cosign syft node
+
+      - name: Run GoReleaser
+        run: goreleaser release --clean --release-notes=/tmp/release-notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # The MCP Bundle (.mcpb) Claude Desktop installs. Built after GoReleaser so
+      # it can pack the binaries from dist/, including the universal macOS build.
+      # Node comes from mise, set up above without caches.
+      - name: Build MCP Bundle
+        run: node scripts/build-mcpb.mjs
+
+      # Built after GoReleaser signed the checksums file, so it gets its own
+      # keyless signature bundle, verified the same way as the checksums file.
+      - name: Sign MCP Bundle
+        run: |
+          for f in dist/mcp-grafana_*.mcpb; do
+            cosign sign-blob --yes --bundle "$f.sigstore.json" "$f"
+          done
+
+      - name: Attach MCP Bundle to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/mcp-grafana_*.mcpb dist/mcp-grafana_*.mcpb.sigstore.json --clobber
+
+  pypi:
+    runs-on: ubuntu-latest
+    needs: [goreleaser]
+    permissions:
+      id-token: write # Trusted publishing to PyPI
+    environment:
+      name: pypi
+      url: https://pypi.org/p/mcp-grafana
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Set up mise
+        uses: ./.github/actions/setup-mise
+        with:
+          cache: false
+          tools: go uv
+
+      - name: Build wheels
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          # TODO: switch to `uvx go-to-wheel` once --package-path and binary compression are released
+          # (see https://github.com/simonw/go-to-wheel/pull/5 and https://github.com/simonw/go-to-wheel/pull/7)
+          uvx --from "go-to-wheel @ git+https://github.com/sd2k/go-to-wheel@e7a9fe44440039a9709c3deee2f9fa6cad0411fd" \
+            go-to-wheel . \
+            --package-path ./cmd/mcp-grafana \
+            --name mcp-grafana \
+            --version "$VERSION" \
+            --description "Grafana MCP server - interact with Grafana via the Model Context Protocol" \
+            --url "https://github.com/grafana/mcp-grafana" \
+            --license Apache-2.0 \
+            --readme README.md
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          skip-existing: true

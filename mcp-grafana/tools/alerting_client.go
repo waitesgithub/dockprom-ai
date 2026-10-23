@@ -1,0 +1,412 @@
+package tools
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/prometheus/alertmanager/api/v2/models"
+	"github.com/prometheus/alertmanager/config"
+	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/prometheus/prometheus/model/labels"
+	"gopkg.in/yaml.v3"
+
+	grafanaModels "github.com/grafana/grafana-openapi-client-go/models"
+	mcpgrafana "github.com/grafana/mcp-grafana/v2"
+)
+
+const (
+	defaultTimeout    = 30 * time.Second
+	rulesEndpointPath = "/api/prometheus/grafana/api/v1/rules"
+)
+
+const (
+	alertRuleUIDLabel          = "__alert_rule_uid__"
+	alertRuleNamespaceUIDLabel = "__alert_rule_namespace_uid__"
+)
+
+type alertingClient struct {
+	baseURL    *url.URL
+	httpClient *http.Client
+}
+
+func newAlertingClientFromContext(ctx context.Context) (*alertingClient, error) {
+	cfg := mcpgrafana.GrafanaConfigFromContext(ctx)
+	baseURL := cfg.URL
+	parsedBaseURL, err := url.Parse(baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid Grafana base URL %q: %w", baseURL, err)
+	}
+
+	transport, err := mcpgrafana.BuildTransport(&cfg, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create custom transport: %w", err)
+	}
+
+	return &alertingClient{
+		baseURL: parsedBaseURL,
+		httpClient: &http.Client{
+			Transport: transport,
+			Timeout:   defaultTimeout,
+		},
+	}, nil
+}
+
+func (c *alertingClient) makeRequest(ctx context.Context, path string, params url.Values) (*http.Response, error) {
+	u := c.baseURL.JoinPath(path)
+	if len(params) > 0 {
+		u.RawQuery = params.Encode()
+	}
+	p := u.String()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request to %s: %w", p, err)
+	}
+
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request to %s: %w", p, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		_ = resp.Body.Close() //nolint:errcheck
+		return nil, fmt.Errorf("grafana API returned status code %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	return resp, nil
+}
+
+const (
+	// maxRulesLimit is the hard limit on the number of rules to return.
+	maxRulesLimit = 200
+	// maxAlertsLimit is the hard limit on the number of alert instances per rule.
+	maxAlertsLimit = 200
+)
+
+// GetRulesOpts contains optional server-side filtering parameters for the
+// Prometheus rules API endpoint.
+// RuleGroup, States, LimitAlerts are available since Grafana 10.0.
+// FolderUID requires Grafana 11.4+.
+// SearchFolder, RuleName, RuleType, RuleLimit, Matchers require Grafana 12.4+.
+type GetRulesOpts struct {
+	FolderUID    string   // Filter by folder UID
+	SearchFolder string   // Search folders by full path using partial matching
+	RuleGroup    string   // Filter by exact rule group name
+	RuleName     string   // Search by rule name (substring match)
+	RuleType     string   // Filter by rule type (e.g. "alerting", "recording")
+	States       []string // Filter by rule state (e.g. "firing", "pending", "normal", "nodata", "error")
+	RuleLimit    int      // Maximum number of rules to return (max 200)
+	LimitAlerts  int      // Maximum number of alert instances per rule (max 200)
+	// IncludeInternalLabels asks Grafana to include internal labels such as
+	// rule UID and namespace UID in Prometheus-compatible responses.
+	IncludeInternalLabels bool
+	// Matchers filters alert instances by labels. Each matcher is JSON-encoded
+	// in the shape Grafana expects (e.g. {"name":"severity","value":"critical","isRegex":false,"isEqual":true}).
+	// Multiple matchers are AND-ed together.
+	Matchers []*labels.Matcher
+}
+
+// ruleMatcherJSON is the JSON shape Grafana's Prometheus rules API expects for
+// each `matcher` query parameter. Grafana unmarshals it into an
+// alertmanager pkg/labels.Matcher, which reads the lowercase name/value fields
+// plus the isRegex/isEqual booleans. Prometheus' own labels.Matcher marshals
+// with capitalized field names and a numeric Type instead, which Grafana
+// silently ignores — so we cannot json.Marshal the matcher directly.
+type ruleMatcherJSON struct {
+	Name    string `json:"name"`
+	Value   string `json:"value"`
+	IsRegex bool   `json:"isRegex"`
+	IsEqual bool   `json:"isEqual"`
+}
+
+// toRuleMatcherJSON converts a Prometheus label matcher into the shape Grafana
+// expects, mapping the match type onto the isRegex/isEqual booleans.
+func toRuleMatcherJSON(m *labels.Matcher) ruleMatcherJSON {
+	return ruleMatcherJSON{
+		Name:    m.Name,
+		Value:   m.Value,
+		IsRegex: m.Type == labels.MatchRegexp || m.Type == labels.MatchNotRegexp,
+		IsEqual: m.Type == labels.MatchEqual || m.Type == labels.MatchRegexp,
+	}
+}
+
+func (o *GetRulesOpts) queryValues() url.Values {
+	params := url.Values{}
+	if o.FolderUID != "" {
+		params.Set("folder_uid", o.FolderUID)
+	}
+	if o.SearchFolder != "" {
+		params.Set("search.folder", o.SearchFolder)
+	}
+	if o.RuleGroup != "" {
+		params.Set("rule_group", o.RuleGroup)
+	}
+	if o.RuleName != "" {
+		params.Set("search.rule_name", o.RuleName)
+	}
+	if o.RuleType != "" {
+		params.Set("rule_type", o.RuleType)
+	}
+	for _, s := range o.States {
+		params.Add("state", s)
+	}
+	ruleLimit := o.RuleLimit
+	if ruleLimit > maxRulesLimit {
+		ruleLimit = maxRulesLimit
+	}
+	if ruleLimit > 0 {
+		params.Set("rule_limit", strconv.Itoa(ruleLimit))
+	}
+	limitAlerts := o.LimitAlerts
+	if limitAlerts > maxAlertsLimit {
+		limitAlerts = maxAlertsLimit
+	}
+	if limitAlerts > 0 {
+		params.Set("limit_alerts", strconv.Itoa(limitAlerts))
+	}
+	if o.IncludeInternalLabels {
+		params.Set("includeInternalLabels", "true")
+	}
+	for _, m := range o.Matchers {
+		if m == nil {
+			continue
+		}
+		b, err := json.Marshal(toRuleMatcherJSON(m))
+		if err != nil {
+			continue
+		}
+		params.Add("matcher", string(b))
+	}
+	return params
+}
+
+func (c *alertingClient) GetRules(ctx context.Context, opts *GetRulesOpts) (*rulesResponse, error) {
+	var params url.Values
+	if opts != nil {
+		params = opts.queryValues()
+	}
+	resp, err := c.makeRequest(ctx, rulesEndpointPath, params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get alert rules from Grafana API: %w", err)
+	}
+	defer func() {
+		_ = resp.Body.Close() //nolint:errcheck
+	}()
+
+	var rulesResponse rulesResponse
+	decoder := json.NewDecoder(resp.Body)
+	if err := decoder.Decode(&rulesResponse); err != nil {
+		return nil, fmt.Errorf("failed to decode rules response from %s: %w", rulesEndpointPath, err)
+	}
+
+	return &rulesResponse, nil
+}
+
+type rulesResponse struct {
+	Data struct {
+		RuleGroups []ruleGroup      `json:"groups"`
+		NextToken  string           `json:"groupNextToken,omitempty"`
+		Totals     map[string]int64 `json:"totals,omitempty"`
+	} `json:"data"`
+}
+
+type ruleGroup struct {
+	Name           string         `json:"name"`
+	FolderUID      string         `json:"folderUid"`
+	Rules          []alertingRule `json:"rules"`
+	Interval       float64        `json:"interval"`
+	LastEvaluation time.Time      `json:"lastEvaluation"`
+	EvaluationTime float64        `json:"evaluationTime"`
+}
+
+type alertingRule struct {
+	State          string           `json:"state,omitempty"`
+	Name           string           `json:"name,omitempty"`
+	Query          string           `json:"query,omitempty"`
+	Duration       float64          `json:"duration,omitempty"`
+	KeepFiringFor  float64          `json:"keepFiringFor,omitempty"`
+	Annotations    labels.Labels    `json:"annotations,omitempty"`
+	ActiveAt       *time.Time       `json:"activeAt,omitempty"`
+	Alerts         []alert          `json:"alerts,omitempty"`
+	Totals         map[string]int64 `json:"totals,omitempty"`
+	TotalsFiltered map[string]int64 `json:"totalsFiltered,omitempty"`
+	UID            string           `json:"uid"`
+	FolderUID      string           `json:"folderUid"`
+	Labels         labels.Labels    `json:"labels,omitempty"`
+	Health         string           `json:"health"`
+	LastError      string           `json:"lastError,omitempty"`
+	Type           string           `json:"type"`
+	LastEvaluation time.Time        `json:"lastEvaluation"`
+	EvaluationTime float64          `json:"evaluationTime"`
+}
+
+type alert struct {
+	Labels      labels.Labels `json:"labels"`
+	Annotations labels.Labels `json:"annotations"`
+	State       string        `json:"state"`
+	ActiveAt    *time.Time    `json:"activeAt"`
+	Value       string        `json:"value"`
+}
+
+const datasourceRulesGroupLimit = 20
+
+type datasourceRulesPage struct {
+	v1.RulesResult
+	NextToken string `json:"groupNextToken,omitempty"`
+}
+
+// GetDatasourceRules queries one page of a datasource's Prometheus rules API.
+func (c *alertingClient) GetDatasourceRules(ctx context.Context, datasourceUID string, opts *GetRulesOpts, nextToken string) (*datasourceRulesPage, error) {
+	// use the Grafana unified endpoint - maybe we need to use the datasource proxy endpoint in the future as this
+	// is an api for internal use
+	path := fmt.Sprintf("/api/prometheus/%s/api/v1/rules", datasourceUID)
+	params := url.Values{
+		"group_limit":    {strconv.Itoa(datasourceRulesGroupLimit)},
+		"exclude_alerts": {"true"}, // Rule summaries do not use alert instances.
+	}
+	if nextToken != "" {
+		params.Set("group_next_token", nextToken)
+	}
+	if opts != nil {
+		// Datasource APIs use Prometheus parameters, not the Grafana-managed
+		// rules parameters in queryValues. RuleName is a substring search, so
+		// it cannot be forwarded as the exact-match rule_name[] filter.
+		if opts.RuleGroup != "" {
+			params.Set("rule_group[]", opts.RuleGroup)
+			// Loki and older Mimir versions use the unbracketed spelling.
+			params.Set("rule_group", opts.RuleGroup)
+		}
+		switch opts.RuleType {
+		case "alerting":
+			params.Set("type", "alert")
+		case "recording":
+			params.Set("type", "record")
+		}
+	}
+	resp, err := c.makeRequest(ctx, path, params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get datasource rules: %w", err)
+	}
+	defer func() {
+		_ = resp.Body.Close() //nolint:errcheck
+	}()
+
+	var response struct {
+		Status string              `json:"status"`
+		Data   datasourceRulesPage `json:"data"`
+	}
+	// A single group can be large, and older backends can ignore pagination.
+	// Bound the decompressed body before the JSON decoder allocates for it.
+	body, err := readResponseBody(resp.Body, defaultResponseLimitBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read datasource rules response: %w", err)
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to decode datasource rules response: %w", err)
+	}
+
+	if response.Status != "success" {
+		return nil, fmt.Errorf("datasource rules API returned status: %s", response.Status)
+	}
+
+	return &response.Data, nil
+}
+
+// GetAlertmanagerConfig queries an Alertmanager datasource for its configuration
+// The implementation type determines the API path:
+// - prometheus: /api/v2/status (returns upstream AlertmanagerStatus with YAML config)
+// - mimir/cortex: /api/v1/alerts (returns YAML with nested alertmanager_config)
+func (c *alertingClient) GetAlertmanagerConfig(ctx context.Context, datasourceUID, implementation string) (*config.Config, error) {
+	// determine the API path based on implementation type
+	var apiPath string
+	var isPrometheusV2 bool
+	switch strings.ToLower(implementation) {
+	case "prometheus":
+		apiPath = "/api/v2/status"
+		isPrometheusV2 = true
+	case "mimir", "cortex":
+		apiPath = "/api/v1/alerts"
+	default:
+		// default to prometheus
+		apiPath = "/api/v2/status"
+		isPrometheusV2 = true
+	}
+
+	path := fmt.Sprintf("/api/datasources/proxy/uid/%s%s", datasourceUID, apiPath)
+	resp, err := c.makeRequest(ctx, path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Alertmanager config: %w", err)
+	}
+	defer func() {
+		_ = resp.Body.Close() //nolint:errcheck
+	}()
+
+	if isPrometheusV2 {
+		var statusResp models.AlertmanagerStatus
+		decoder := json.NewDecoder(resp.Body)
+		if err := decoder.Decode(&statusResp); err != nil {
+			return nil, fmt.Errorf("failed to decode Alertmanager status response: %w", err)
+		}
+
+		var cfg config.Config
+		if statusResp.Config != nil && statusResp.Config.Original != nil && *statusResp.Config.Original != "" {
+			if err := yaml.Unmarshal([]byte(*statusResp.Config.Original), &cfg); err != nil {
+				return nil, fmt.Errorf("failed to parse Alertmanager YAML config: %w", err)
+			}
+		}
+
+		return &cfg, nil
+	}
+
+	// Mimir/Cortex /api/v1/alerts returns YAML with alertmanager_config field
+	bodyBytes, err := readResponseBody(resp.Body, defaultResponseLimitBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read Alertmanager config response: %w", err)
+	}
+
+	var mimirResp struct {
+		TemplateFiles      any    `yaml:"template_files"`
+		AlertmanagerConfig string `yaml:"alertmanager_config"` // Nested YAML string
+	}
+	if err := yaml.Unmarshal(bodyBytes, &mimirResp); err != nil {
+		return nil, fmt.Errorf("failed to decode Mimir alertmanager response: %w", err)
+	}
+
+	// Parse the nested alertmanager_config YAML string
+	var cfg config.Config
+	if err := yaml.Unmarshal([]byte(mimirResp.AlertmanagerConfig), &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse Mimir alertmanager_config YAML: %w", err)
+	}
+
+	return &cfg, nil
+}
+
+// GetRuleVersions fetches the version history for a Grafana-managed alert rule.
+// The endpoint may not exist on older Grafana versions; callers should handle errors.
+func (c *alertingClient) GetRuleVersions(ctx context.Context, ruleUID string) ([]grafanaModels.GettableExtendedRuleNode, error) {
+	path := fmt.Sprintf("/api/ruler/grafana/api/v1/rule/%s/versions", ruleUID)
+	resp, err := c.makeRequest(ctx, path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get rule versions: %w", err)
+	}
+	defer func() {
+		_ = resp.Body.Close() //nolint:errcheck
+	}()
+
+	var versions []grafanaModels.GettableExtendedRuleNode
+	if err := json.NewDecoder(resp.Body).Decode(&versions); err != nil {
+		return nil, fmt.Errorf("failed to decode rule versions response: %w", err)
+	}
+
+	return versions, nil
+}
