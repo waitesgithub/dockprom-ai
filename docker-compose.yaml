@@ -46,6 +46,9 @@ services:
       - "3000:3000"
     volumes:
       - grafana-data:/var/lib/grafana
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - ./grafana/provider.yaml:/etc/grafana/provisioning/dashboards/provider.yaml
+      - ./grafana/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
     networks:
       - monitoring
 
@@ -129,4 +132,28 @@ services:
       - 4318:4318 # OTLP http receiver
       - 55679:55679 # zpages extension        
     networks:
-      - monitoring        
+      - monitoring
+
+  logporter:
+    image: lifailon/logporter:latest
+    container_name: logporter
+    restart: unless-stopped
+    ports:
+      - "9333:9333"
+    environment:
+      - LOG_LEVEL=info
+      - DOCKER_METRICS_PORT=9333
+      - DOCKER_METRICS_CUSTOM_LABELS=org.opencontainers.image.url,org.opencontainers.image.version,org.opencontainers.image.created
+      - DOCKER_METRICS_CACHE=15
+      - DOCKER_METRICS_VOLUME=true
+      - DOCKER_METRICS_VOLUME_CACHE=30
+      - DOCKER_METRICS_IMAGE_UPDATE=true
+      - DOCKER_METRICS_IMAGE_INTERVAL=30
+      - LOKI_URL=http://loki:3100
+      - LOKI_PUSH_SECONDS=5
+      - LOKI_PUSH_LINES=1000
+      - LOKI_BUFFER_LINES=10000
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - monitoring
