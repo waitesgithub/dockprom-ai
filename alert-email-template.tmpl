@@ -1,0 +1,8 @@
+{{ define "email.custom.html" }}
+<h3>{{ .Status | toUpper }}: {{ .Alerts | len }} alert(s)</h3>
+{{ range .Alerts }}
+<p><b>{{ .Labels.alertname }}</b> ({{ .Labels.severity }})<br/>
+{{ .Annotations.summary }}<br/>
+{{ .Annotations.description }}</p>
+{{ end }}
+{{ end }}
