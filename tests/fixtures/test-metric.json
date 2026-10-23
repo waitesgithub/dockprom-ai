@@ -1,0 +1,1 @@
+{"resourceMetrics":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"integration-test"}}]},"scopeMetrics":[{"scope":{"name":"it"},"metrics":[{"name":"integration_test_gauge","gauge":{"dataPoints":[{"asDouble":42,"timeUnixNano":"__NOW__"}]}}]}]}]}

@@ -1,0 +1,36 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test dependencies
+        run: sudo apt-get update && sudo apt-get install -y jq python3-yaml
+      - name: Static validation
+        run: |
+          bash tests/config-validation.sh
+          bash tests/docker-compose-validation.sh
+      - name: Start stack
+        run: docker compose up -d
+      - name: Health checks
+        run: bash tests/health-checks.sh
+      - name: Service connectivity
+        run: bash tests/service-connectivity.sh
+      - name: Data flow
+        run: bash tests/data-flow.sh
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose ps -a && docker compose logs --tail=100
+      - name: Stop stack
+        if: always()
+        run: docker compose down -v
