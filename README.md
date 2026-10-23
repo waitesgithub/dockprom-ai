@@ -190,7 +190,8 @@ export OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:4318"
 export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
 ```
 
-**For apps in Docker (same `monitor-net` network):**
+**For apps in Docker:** Join the Compose project's `monitoring` network (named
+`<project>_monitoring`, usually `dockprom-ai_monitoring`):
 
 ```bash
 OTEL_SERVICE_NAME=my-app
@@ -200,13 +201,15 @@ OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 
 ## Setup Grafana
 
-Navigate to `http://<host-ip>:3000` and login with **admin / admin**. 
+Navigate to `http://localhost:3000` and log in with **admin / admin**. Published
+ports bind to localhost; change the Compose port binding if you need remote
+access.
 
 **Change credentials by modifying your compose file or config:**
 
 ```yaml
 grafana:
-  image: grafana/grafana:latest
+  image: grafana/grafana:13.2.4
   env_file:
     - config
 ```
