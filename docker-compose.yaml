@@ -19,7 +19,7 @@ volumes:
     
 services:
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.15.1
     container_name: prometheus
     restart: unless-stopped
     volumes:
@@ -39,18 +39,21 @@ services:
       - monitoring
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:13.2.4
     container_name: grafana
     restart: unless-stopped
     ports:
       - "3000:3000"
     volumes:
       - grafana-data:/var/lib/grafana
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - ./grafana/provider.yaml:/etc/grafana/provisioning/dashboards/provider.yaml
+      - ./grafana/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
     networks:
       - monitoring
 
   node-exporter:
-    image: prom/node-exporter:latest
+    image: prom/node-exporter:v1.12.1
     container_name: node-exporter
     restart: unless-stopped
     volumes:
@@ -69,7 +72,7 @@ services:
       - monitoring
 
   alertmanager:
-    image: prom/alertmanager:latest
+    image: prom/alertmanager:v0.34.1
     container_name: alertmanager
     restart: unless-stopped
     ports: 
@@ -83,7 +86,7 @@ services:
       - monitoring  
 
   tempo:
-    image: grafana/tempo:latest
+    image: grafana/tempo:3.1.1
     container_name: tempo
     restart: unless-stopped
     ports:     
@@ -98,7 +101,7 @@ services:
 
             
   loki:
-    image: grafana/loki:latest
+    image: grafana/loki:3.7.9
     container_name: loki
     restart: unless-stopped
     ports:
@@ -111,7 +114,7 @@ services:
       - monitoring    
       
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
+    image: otel/opentelemetry-collector-contrib:0.163.0
     container_name: otel-collector
     restart: unless-stopped
     volumes:
@@ -129,4 +132,28 @@ services:
       - 4318:4318 # OTLP http receiver
       - 55679:55679 # zpages extension        
     networks:
-      - monitoring        
+      - monitoring
+
+  logporter:
+    image: lifailon/logporter:latest
+    container_name: logporter
+    restart: unless-stopped
+    ports:
+      - "9333:9333"
+    environment:
+      - LOG_LEVEL=info
+      - DOCKER_METRICS_PORT=9333
+      - DOCKER_METRICS_CUSTOM_LABELS=org.opencontainers.image.url,org.opencontainers.image.version,org.opencontainers.image.created
+      - DOCKER_METRICS_CACHE=15
+      - DOCKER_METRICS_VOLUME=true
+      - DOCKER_METRICS_VOLUME_CACHE=30
+      - DOCKER_METRICS_IMAGE_UPDATE=true
+      - DOCKER_METRICS_IMAGE_INTERVAL=30
+      - LOKI_URL=http://loki:3100
+      - LOKI_PUSH_SECONDS=5
+      - LOKI_PUSH_LINES=1000
+      - LOKI_BUFFER_LINES=10000
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - monitoring
