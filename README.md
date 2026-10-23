@@ -54,11 +54,10 @@ Volumes: `prometheus_data`, `grafana-data`, `loki-data`, `tempo-data`, `otel-dat
 | `grafana/dashboards/metrics.json` | Grafana | Container metrics dashboard (Prometheus) |
 | `alert-config.yaml` | AlertManager | Routes and receivers |
 | `alert-email-template.tmpl` | AlertManager | Email template (mounted as `/etc/alertmanager/email-template.tmpl`) |
-| `tempo.yaml` | Tempo | Tracing backend configuration |
+| `tempo.yaml` | Tempo | Tracing backend configuration (OTLP receivers, local storage) |
 | `loki-config.yaml` | Loki | Log storage configuration |
 | `otel-collector-config.yaml` | OpenTelemetry Collector | Receivers, processors and exporters |
 
-> **Note:** `alert-config.yaml`, `alert-email-template.tmpl`, `tempo.yaml`, `loki-config.yaml` and `otel-collector-config.yaml` are referenced by `docker-compose.yaml` but are not yet included in this repository.
 
 ## Grafana
 

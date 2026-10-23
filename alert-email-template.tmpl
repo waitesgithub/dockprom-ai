@@ -1,0 +1,15 @@
+{{ define "email.custom.html" }}
+<h2>{{ .Status | toUpper }}: {{ len .Alerts }} alert(s)</h2>
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr><th>Alert</th><th>Severity</th><th>Container</th><th>Summary</th><th>Started</th></tr>
+  {{ range .Alerts }}
+  <tr>
+    <td>{{ .Labels.alertname }}</td>
+    <td>{{ .Labels.severity }}</td>
+    <td>{{ .Labels.containerName }}</td>
+    <td>{{ .Annotations.summary }}</td>
+    <td>{{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}</td>
+  </tr>
+  {{ end }}
+</table>
+{{ end }}
