@@ -10,18 +10,16 @@ A comprehensive monitoring solution for Docker hosts and containers with AI-powe
 - **Loki** - Log aggregation
 - **Tempo** - Distributed tracing
 - **OpenTelemetry Collector** - OTLP ingest
-- **cAdvisor** - Container metrics
-- **NodeExporter** - Host metrics
+- **Logporter** - Docker metrics, container logs, and image update checks
+- **Node Exporter** - Host metrics
 - **Grafana MCP Server** - AI-powered Grafana integration
-- **Ollama Gateway** - LLM inference with observability
 - **AlertManager** - Alert management
 
 ## Quick Start
 
 ### Prerequisites
 
-- Docker Engine >= 1.13
-- Docker Compose >= 1.11
+- Docker Engine with Docker Compose v2
 
 ### Installation
 
@@ -31,14 +29,16 @@ Clone this repository and start the monitoring stack:
 git clone https://github.com/waitesgithub/dockprom-ai
 cd dockprom-ai
 
-ADMIN_USER='admin' ADMIN_PASSWORD='admin' ADMIN_PASSWORD_HASH='$2a$14$1l.IozJx7xQRVmlkEQ32OeEEfP5mRxTpbDTCTcXRqn19gXD8YK1pO' docker-compose up -d
+export MCP_GRAFANA_SERVER_TOKEN="$(openssl rand -hex 32)"
+docker compose --env-file config up -d
 ```
 
-**Note:** Caddy v2 requires passwords as hash values. The above hash corresponds to password 'admin'. To generate a new hash:
-
-```bash
-docker run --rm caddy caddy hash-password --plaintext 'YOUR_PASSWORD'
-```
+The committed `config` file is for local evaluation. Change the default Grafana
+and Logporter passwords before exposing the stack beyond localhost. Create a
+Grafana service account after the first start, then provide its token through
+the `GRAFANA_SERVICE_ACCOUNT_TOKEN` environment variable and restart
+`mcp-grafana`. Keep credentials out of the tracked `config` file and keep the
+stack on localhost unless you configure appropriate network controls.
 
 ## Services
 
@@ -46,23 +46,76 @@ The stack includes the following services:
 
 | Service | URL | Description |
 |---------|-----|-------------|
-| **Grafana** | `http://<host-ip>:3000` | Visualization and dashboards (admin/admin) |
-| **Prometheus** | `http://<host-ip>:9090` | Metrics database and queries |
-| **Prometheus Pushgateway** | `http://<host-ip>:9091` | Push acceptor for ephemeral/batch jobs |
-| **AlertManager** | `http://<host-ip>:9093` | Alert management and routing |
-| **Loki** | `http://<host-ip>:3100` | Log aggregation database |
-| **Tempo** | `http://<host-ip>:3200` | Distributed tracing database |
-| **OpenTelemetry Collector** | `http://<host-ip>:4318` (HTTP) | OTLP metrics, logs, and traces ingest |
-| **OpenTelemetry Collector** | `http://<host-ip>:4317` (gRPC) | OTLP ingest |
-| **Ollama Gateway** | `http://<host-ip>:11435` | HTTP proxy with tracing/metrics for Ollama |
+| **Grafana** | `http://localhost:3000` | Visualization and dashboards (admin/admin by default) |
+| **Prometheus** | `http://localhost:9090` | Metrics database and queries |
+| **Prometheus Pushgateway** | `http://localhost:9091` | Push acceptor for ephemeral/batch jobs |
+| **AlertManager** | `http://localhost:9093` | Alert management and routing |
+| **Loki** | `http://localhost:3100` | Log aggregation database |
+| **Tempo** | `http://localhost:3200` | Distributed tracing database |
+| **Logporter** | `http://localhost:9333` | Docker metrics, container log dashboard, and image update checks (admin/admin by default) |
+| **Grafana MCP** | `http://localhost:8000` | Grafana MCP HTTP endpoint |
+| **OpenTelemetry Collector** | `http://localhost:4318` (HTTP) | OTLP metrics, logs, and traces ingest |
+| **OpenTelemetry Collector** | `http://localhost:4317` (gRPC) | OTLP ingest |
 | **NodeExporter** | - | Host metrics collector |
-| **cAdvisor** | - | Container metrics collector |
-| **Alloy** | - | Docker logs collector → Loki |
-| **Caddy** | - | Reverse proxy with basic auth |
+| **Caddy** | `http://localhost:8080` | Reverse proxy to Grafana |
+
+The stack's published ports bind to localhost. `docker-compose.exporters.yml`
+provides a separate host-networked exporter setup; adjust Prometheus scrape
+targets to the host addresses when using it instead of the default services.
+
+## Logporter
+
+Logporter replaces cAdvisor for container metrics and also collects Docker logs
+for Loki, reports image-update status, and serves its own dashboard at
+`http://localhost:9333`. Its Docker dashboard can be imported into Grafana with
+dashboard ID **23848**; the Logporter web dashboard is available directly.
+
+The Compose setup enables Docker volume metrics (30-minute cache), checks for
+image updates every 30 minutes, and pushes logs to Loki every 5 seconds or
+after 1,000 lines. The Logporter UI defaults to `admin` / `admin`; change
+`LOGPORTER_DASHBOARD_USERNAME` and `LOGPORTER_DASHBOARD_PASSWORD` in `config`
+before exposing it to other hosts.
+
+Logporter accesses the Docker API through a network-isolated socket proxy
+configured for read operations. Mounting the Docker socket still grants access
+to sensitive host metadata, so keep the proxy and monitoring network private.
+Logporter is designed as a lightweight alternative to cAdvisor; the resource
+difference depends on host and container workload rather than being a fixed
+performance guarantee.
+
+| Capability | cAdvisor | Logporter |
+|------------|----------|-----------|
+| Container metrics | Yes | Yes |
+| Docker log forwarding to Loki | No | Yes |
+| Image update status | No | Yes |
+| Dashboard | External Grafana dashboard | Web UI on port 9333 and Grafana dashboard 23848 |
+| Resource comparison | Baseline | The upstream publishes a 24-hour comparison for 25 containers; results vary by workload ([benchmark](https://github.com/Lifailon/logporter#performance)) |
+
+## Image versions
+
+| Component | Image |
+|-----------|-------|
+| Prometheus | `prom/prometheus:v2.47.0` |
+| Grafana | `grafana/grafana:13.2.4` |
+| AlertManager | `prom/alertmanager:v0.34.1` |
+| Node Exporter | `prom/node-exporter:v1.6.1` |
+| Logporter | `lifailon/logporter:latest` |
+| Loki | `grafana/loki:latest` |
+| Grafana MCP | Built locally from `grafana/mcp-grafana` at upstream `v2.1.1` |
 
 ## AI-Powered Observability with Grafana MCP Server
 
-Dockprom-AI integrates the **Grafana MCP Server**, enabling AI agents (Claude, Cursor, etc.) to interact with your observability stack.
+Dockprom-AI builds and runs the Go-based **Grafana MCP Server** from the
+upstream `v2.1.1` release, enabling MCP clients (Claude, Cursor, etc.) to
+interact with Grafana. The service listens on `http://localhost:8000`; provide
+a Grafana service-account token through the environment before using it.
+
+Create a service account in Grafana and grant only the permissions needed by
+your MCP client. Set `GRAFANA_SERVICE_ACCOUNT_TOKEN` in the environment.
+The separate `MCP_GRAFANA_SERVER_TOKEN` protects the HTTP endpoint; MCP clients
+must send it as a bearer token. The server only accepts localhost Host headers.
+After setting the service-account token, restart the MCP service with
+`docker compose --env-file config up -d mcp-grafana`.
 
 ### Features
 
@@ -116,36 +169,14 @@ Dockprom-AI integrates the **Grafana MCP Server**, enabling AI agents (Claude, C
 - **Manage permissions** - View and manage resource permissions
 - **Get user/org info** - Current identity and capabilities
 
-## AI Observability: Ollama + OTEL + Loki + Tempo
+## AI Observability: OpenTelemetry + Loki + Tempo
 
-Dockprom-AI extends the stack with a **drop-in observability bundle** for AI/LLM applications:
+Applications can send telemetry to the OpenTelemetry Collector and view it in
+Grafana:
 
 - **Traces** - Apps send OTLP traces → stored in Tempo → viewed in Grafana
-- **Logs** - Docker logs collected by Alloy → stored in Loki → viewed in Grafana
+- **Logs** - Apps send OTLP logs → stored in Loki → viewed in Grafana; Logporter also sends Docker logs
 - **Metrics** - OTLP metrics sent to OTel Collector → exposed for Prometheus
-- **Ollama Gateway** - Envoy proxy with automatic request tracing and metrics
-
-### Make Host Ollama Reachable
-
-The gateway runs in Docker and forwards to `host.docker.internal:11434`. On Linux, ensure Ollama listens on a non-loopback interface:
-
-```bash
-export OLLAMA_HOST=0.0.0.0:11434
-ollama serve
-```
-
-### Use the Ollama Gateway
-
-Point your applications to:
-
-```
-http://<host-ip>:11435
-```
-
-This automatically provides:
-- **Tempo traces** for each request
-- **Prometheus metrics** for RPS, latency, and errors
-- **Loki logs** for gateway and access logs
 
 ### Instrument Your Application
 
@@ -180,9 +211,9 @@ grafana:
     - config
 ```
 
-**Config file format:**
+**Config file format** (`config`):
 
-```yaml
+```dotenv
 GF_SECURITY_ADMIN_USER=admin
 GF_SECURITY_ADMIN_PASSWORD=changeme
 GF_USERS_ALLOW_SIGN_UP=false
@@ -201,35 +232,19 @@ Additional datasources:
 - **Loki** - `http://loki:3100`
 - **Tempo** - `http://tempo:3200`
 
-### Pre-configured Dashboards
+### Dashboards
 
-**Docker Host Dashboard**
-- Server uptime, CPU, and memory metrics
-- System load, processes, and I/O
-- CPU usage by mode
-- Memory and storage usage
-- Network metrics by device
-- Swap usage and activity
-
-**Docker Containers Dashboard**
-- Total containers CPU, memory, and storage
-- Running containers and system load
-- Container CPU usage
-- Container memory usage
-- Container network I/O
-
-**Monitor Services Dashboard**
-- Prometheus uptime and storage metrics
-- Prometheus ingestion rate and scrape metrics
-- Alert tracking and performance graphs
+The `Dockprom AI` dashboard is provisioned from
+`grafana/dashboards/dockprom-ai.json`. Import Logporter's Grafana dashboard
+with dashboard ID **23848** to view its Docker metrics.
 
 ## Define Alerts
 
-Three alert groups are configured in [prometheus/alert.rules](prometheus/alert.rules):
+Alert groups are configured in [prometheus/alert.rules](prometheus/alert.rules):
 
 ### Monitoring Services Alerts
 
-Alert if monitoring targets (node-exporter, cAdvisor) are down:
+Alert if monitoring targets (node-exporter, Logporter) are down:
 
 ```yaml
 - alert: monitor_service_down
@@ -285,43 +300,43 @@ High storage usage:
 
 ### Docker Containers Alerts
 
-Container down:
+Container memory alert:
 
 ```yaml
-- alert: container_down
-  expr: absent(container_memory_usage_bytes{name="service-name"})
+- alert: container_high_memory
+  expr: docker_memory_usage > 1200000000
   for: 30s
   labels:
-    severity: critical
+    severity: warning
   annotations:
-    summary: "Container down"
-    description: "Container is down for more than 30 seconds."
+    summary: "Container high memory"
+    description: "Container memory consumption: {{ humanize $value }} bytes."
 ```
 
 Container high CPU:
 
 ```yaml
 - alert: container_high_cpu
-  expr: sum(rate(container_cpu_usage_seconds_total{name="service"}[1m])) / count(node_cpu_seconds_total{mode="system"}) * 100 > 10
+  expr: sum(rate(docker_cpu_usage_total[1m])) * 100 > 10
   for: 30s
   labels:
     severity: warning
   annotations:
-    summary: "Container high CPU"
+    summary: "Container CPU usage is high"
     description: "Container CPU usage: {{ humanize $value }}%"
 ```
 
-Container high memory:
+Container image update check:
 
 ```yaml
-- alert: container_high_memory
-  expr: sum(container_memory_usage_bytes{name="service"}) > 1200000000
+- alert: container_image_update
+  expr: docker_image_update == 1
   for: 30s
   labels:
     severity: warning
   annotations:
-    summary: "Container high memory"
-    description: "Container memory consumption: {{ humanize $value }}"
+    summary: "Docker image update available"
+    description: "An update is available for {{ $labels.image }}."
 ```
 
 ## Setup Alerting

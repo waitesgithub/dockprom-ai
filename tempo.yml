@@ -1,0 +1,38 @@
+server:
+  http_listen_port: 3200
+
+stream_over_http_enabled: true
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+live_store:
+  max_trace_idle: 10s
+  max_block_duration: 5m
+  max_block_bytes: 1000000
+
+backend_scheduler:
+  provider:
+    compaction:
+      compaction:
+        compaction_window: 1h
+        max_block_bytes: 100000000
+        block_retention: 48h
+        compacted_block_retention: 10m
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /tmp/tempo/wal
+    local:
+      path: /tmp/tempo/blocks
+
+usage_report:
+  reporting_enabled: false

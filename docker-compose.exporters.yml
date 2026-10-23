@@ -1,0 +1,33 @@
+services:
+  node-exporter:
+    image: prom/node-exporter:v1.6.1
+    container_name: node-exporter-host
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - --path.procfs=/host/proc
+      - --path.rootfs=/rootfs
+      - --path.sysfs=/host/sys
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+
+  logporter:
+    image: lifailon/logporter:latest
+    container_name: logporter-host
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      DOCKER_METRICS_VOLUME: "true"
+      DOCKER_METRICS_VOLUME_CACHE: "30"
+      DOCKER_METRICS_IMAGE_UPDATE: "true"
+      DOCKER_METRICS_IMAGE_INTERVAL: "30"
+      LOKI_URL: http://127.0.0.1:3100
+      LOKI_PUSH_SECONDS: "5"
+      LOKI_PUSH_LINES: "1000"
+      DASHBOARD_USERNAME: ${LOGPORTER_DASHBOARD_USERNAME:-admin}
+      DASHBOARD_PASSWORD: ${LOGPORTER_DASHBOARD_PASSWORD:-admin}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
