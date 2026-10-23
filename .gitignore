@@ -1,6 +1,10 @@
 # Cache objects
 packer_cache/
 
+# Local secrets and Compose overrides
+.env
+.env.*
+
 # Crash log
 crash.log
 

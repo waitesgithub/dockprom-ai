@@ -1,0 +1,42 @@
+services:
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro,rslave
+    command:
+      - --path.procfs=/host/proc
+      - --path.rootfs=/rootfs
+      - --path.sysfs=/host/sys
+    ports:
+      - "9100:9100"
+    networks:
+      - monitoring
+
+  pushgateway:
+    image: prom/pushgateway:v1.11.4
+    restart: unless-stopped
+    ports:
+      - "9091:9091"
+    networks:
+      - monitoring
+
+  logporter:
+    image: lifailon/logporter:latest
+    restart: unless-stopped
+    environment:
+      DOCKER_METRICS_PORT: "9333"
+      LOKI_URL: http://loki:3100
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "9333:9333"
+    networks:
+      - monitoring
+
+networks:
+  monitoring:
+    external: true
+    name: monitoring
