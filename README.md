@@ -1,62 +1,487 @@
-# Observability 3.0: AI-Powered APM = AI Stack + Observability Stack
+# Dockprom-AI: AI-Powered Observability Stack
 
-## Step-by-Step Tutorial: Observability 3.0: AI-Powered APM = Claude (cloud-based) / Ollama (self-hosted) + MCP Server + Observability Stack 
+[![Unit Tests](https://github.com/grafana/mcp-grafana/actions/workflows/unit.yml/badge.svg)](https://github.com/grafana/mcp-grafana/actions/workflows/unit.yml)
+[![Integration Tests](https://github.com/grafana/mcp-grafana/actions/workflows/integration.yml/badge.svg)](https://github.com/grafana/mcp-grafana/actions/workflows/integration.yml)
+[![E2E Tests](https://github.com/grafana/mcp-grafana/actions/workflows/e2e.yml/badge.svg)](https://github.com/grafana/mcp-grafana/actions/workflows/e2e.yml)
 
-<img width="4877" height="3408" alt="image" src="https://github.com/user-attachments/assets/2f026eaf-bd8c-44b2-969a-eae52f3188ff" />
+A comprehensive monitoring solution for Docker hosts and containers with AI-powered observability, combining:
+- **Prometheus** - Metrics database
+- **Grafana** - Visualization and dashboards
+- **Loki** - Log aggregation
+- **Tempo** - Distributed tracing
+- **OpenTelemetry Collector** - OTLP ingest
+- **cAdvisor** - Container metrics
+- **NodeExporter** - Host metrics
+- **Grafana MCP Server** - AI-powered Grafana integration
+- **Ollama Gateway** - LLM inference with observability
+- **AlertManager** - Alert management
 
-In today’s cloud-based world, observability is no longer just about collecting logs, metrics, and traces. We can take observability to the next level with AI-powered APM (Application Performance Monitoring). Tools like Claude (cloud-based AI) and Ollama (self-hosted AI), combined with Prometheus, Grafana, Loki, Tempo, and OpenTelemetry, enable us to create an intelligent observability ecosystem. In this hands-on guide, I’ll show you, step by step, how to integrate AI with observability platforms. We’ll run with various LLM models and compare their results. The integration of AI and observability systems will enable real-time anomaly detection and faster root cause analysis for your systems. I will share with you a comprehensive overview of my experiences with integrating AI and observability systems.
+## Quick Start
 
-## 📗 Medium Articles' Links:
+### Prerequisites
 
-- [📝Observability 3.0 AI-Powered APM = Claude (cloud-based) / Ollama (self-hosted) + MCP Server + n8n + Prometheus, Grafana, Loki, Tempo, OpenTelemetry, PostgreSQL Exporter, Node Exporter, cAdvisor, Promtail, Alert Manager — A Comprehensive Hands-On Guide for Live Monitoring with LLMs (Large Language Models)](https://cmakkaya.medium.com/observability-3-0-ai-powered-apm-claude-cloud-based-ollama-self-hosted-mcp-server-n8n-monitor-6ea436e271fe?postPublishedType=repub) `happy reading.`
+- Docker Engine >= 1.13
+- Docker Compose >= 1.11
 
-- [📝Introduction Observability 3.0: AI-Powered APM = AI Stack + Observability Stack— A Hands-On Guide (Part-2)](https://cmakkaya.medium.com/introduction-observability-3-0-ai-powered-apm-ai-stack-observability-stack-part-2-33b1d6a262d7?postPublishedType=repub) `happy reading.`
+### Installation
 
-- [📝Observability 3.0: AI-Powered APM = Claude (cloud-based) + MCP Server + Observability Stack — A Comprehensive Hands-On Guide for Live Monitoring with LLMs (Part-3)](https://cmakkaya.medium.com/observability-3-0-5d3ccd6d42de?postPublishedType=repub) `happy reading.`
-  
-- [📝Observability 3.0: Self-hosted AI-Powered APM = Ollama + n8n + GrafanaToolServer + Observability Stack — A Comprehensive Hands-On Guide for Live Monitoring with LLMs (Part-4)](https://cmakkaya.medium.com/observability-3-0-ai-powered-apm-ollama-self-hosted-n8n-grafanatoolserver-observability-stack-ff218b0a081e?postPublishedType=initial) `happy reading.`
+Clone this repository and start the monitoring stack:
 
+```bash
+git clone https://github.com/waitesgithub/dockprom-ai
+cd dockprom-ai
 
-## Hi there, <img src = "https://github.com/cmakkaya/cmakkaya/blob/main/wavehand.gif" width = "40" align="center"> Nice to see you. <img src="https://emojis.slackmojis.com/emojis/images/1531849430/4246/blob-sunglasses.gif?1531849430" width="40"/>  
+ADMIN_USER='admin' ADMIN_PASSWORD='admin' ADMIN_PASSWORD_HASH='$2a$14$1l.IozJx7xQRVmlkEQ32OeEEfP5mRxTpbDTCTcXRqn19gXD8YK1pO' docker-compose up -d
+```
 
-✏️ Don't forget to follow [my LinkedIn account](https://www.linkedin.com/in/cumhurakkaya/) or [my Medium account](https://cmakkaya.medium.com/)  to be informed about new updates in the repository.
+**Note:** Caddy v2 requires passwords as hash values. The above hash corresponds to password 'admin'. To generate a new hash:
 
-⭐ Also, thank you for giving `stars` to my GitHub.
+```bash
+docker run --rm caddy caddy hash-password --plaintext 'YOUR_PASSWORD'
+```
 
-I hope they are useful to you.
+## Services
 
-🙏 I wish you growing success.
+The stack includes the following services:
 
-----------
-### 📗 Note-1: If you learn detailed information about Artificial Intelligence (AI) and AWS AI Services, you can review my articles below:
+| Service | URL | Description |
+|---------|-----|-------------|
+| **Grafana** | `http://<host-ip>:3000` | Visualization and dashboards (admin/admin) |
+| **Prometheus** | `http://<host-ip>:9090` | Metrics database and queries |
+| **Prometheus Pushgateway** | `http://<host-ip>:9091` | Push acceptor for ephemeral/batch jobs |
+| **AlertManager** | `http://<host-ip>:9093` | Alert management and routing |
+| **Loki** | `http://<host-ip>:3100` | Log aggregation database |
+| **Tempo** | `http://<host-ip>:3200` | Distributed tracing database |
+| **OpenTelemetry Collector** | `http://<host-ip>:4318` (HTTP) | OTLP metrics, logs, and traces ingest |
+| **OpenTelemetry Collector** | `http://<host-ip>:4317` (gRPC) | OTLP ingest |
+| **Ollama Gateway** | `http://<host-ip>:11435` | HTTP proxy with tracing/metrics for Ollama |
+| **NodeExporter** | - | Host metrics collector |
+| **cAdvisor** | - | Container metrics collector |
+| **Alloy** | - | Docker logs collector → Loki |
+| **Caddy** | - | Reverse proxy with basic auth |
 
-- [📝 AWS AI Services-2: Hands-on use cases for Amazon Rekognition.](https://cmakkaya.medium.com/aws-ai-services-2-hands-on-use-cases-for-amazon-rekognition-4d98501ddcee)
+## AI-Powered Observability with Grafana MCP Server
 
-- [📝 AWS AI Services-1: What are Artificial Intelligence (AI) and AWS AI Services?](https://cmakkaya.medium.com/aws-ai-services-1-what-is-artificial-intelligence-ai-and-aws-ai-services-c5f2adf60243)
+Dockprom-AI integrates the **Grafana MCP Server**, enabling AI agents (Claude, Cursor, etc.) to interact with your observability stack.
 
-- [📝 Developing a Scalable AI Chatbot Using Azure OpenAI (LLM provider), Java Microservices, and MySQL – A Complete Guide.](https://medium.com/@cmakkaya/developing-a-scalable-ai-chatbot-using-azure-openai-llm-provider-java-microservices-and-mysql-6c98839bd051)
+### Features
 
+#### Dashboards
+- **Search for dashboards** - Find by title, folder, tags, or starred status
+- **Get dashboard details** - Retrieve full dashboard JSON or summaries
+- **List dashboard versions** - Access saved snapshots and version history
+- **Get dashboard properties** - Extract specific parts using JSONPath
+- **Create/Update dashboards** - Programmatic dashboard management
+- **Patch dashboards** - Apply targeted modifications
+- **Get panel queries** - Extract query information from panels
 
-### 📗 Note-2: If you want to learn deploying a restaurant web application to the Google Cloud GKE (Kubernetes cluster) using GitHub Actions (for Continuous Integration) and Argo CD (for Continuous Delivery), you can read my Medium articles below:
+#### Prometheus Querying
+- **Query Prometheus** - Execute PromQL queries (instant and range)
+- **Query metadata** - Retrieve metric names, label names, and values
+- **Histogram percentiles** - Calculate p50, p90, p95, p99 percentiles
 
-A powerful combination in the CI/CD world: GitOps (Argo CD)+ Cloud (GCP) + Automation (GitHub Actions). 
+#### Loki Querying
+- **Query logs** - Run LogQL queries against Loki datasources
+- **Query metadata** - Retrieve available labels and their values
+- **Query patterns** - Identify common log structures and anomalies
 
-- [📝 Argo CD and GitHub Action-1: Running Together to Create The CI/CD Pipeline into Google Cloud GKE.](https://cmakkaya.medium.com/argo-cd-and-github-action-1-running-together-them-to-create-the-ci-cd-pipeline-6baeed39dde7?postPublishedType=repub)
+#### Alerting
+- **List alert rules** - View alert rules and their statuses
+- **Create/Update alert rules** - Programmatically manage alerts
+- **Delete alert rules** - Remove rules by UID
+- **Manage routing** - Configure notification policies and contact points
 
-  <img width="1204" height="643" alt="image" src="https://github.com/user-attachments/assets/15fbb480-9ccf-47fb-95bd-ccfa961c41ed" />
+#### Incident Management
+- **Search incidents** - Find incidents with filters
+- **Create incidents** - Programmatically create incident tickets
+- **Update incidents** - Modify status, severity, and custom fields
+- **Read incident details** - Get full incident information
 
+#### OnCall Management
+- **List schedules** - View on-call schedules
+- **Get shift details** - Retrieve specific shift information
+- **Get current on-call users** - See who's on-call
+- **Manage alert groups** - Acknowledge, resolve, or filter alerts
 
-### 📗 Note-3: If you want to learn more about deploying a Microservices Application with RDS MySQL DB into a Kubernetes Cluster with High Availability, Auto-Healing, Reliability, Auto-Scaling, Monitoring, and Securing, you can read my Medium articles below. 
+#### Navigation
+- **Generate deeplinks** - Create accurate URLs for Grafana resources
+- **Dashboard links** - Direct links to dashboards using UIDs
+- **Panel links** - Links to specific panels with viewPanel parameters
+- **Explore links** - Pre-configured Grafana Explore links
 
-- [📝 Deploying a Microservices Application with RDS MySQL DB into Kubernetes Cluster With High Availability, Auto-Healing, Reliability, Auto-Scaling, Monitoring, and Securing.](https://cmakkaya.medium.com/deploying-a-microservices-application-with-rds-mysql-db-into-kubernetes-cluster-with-high-818c7c51ab12)
+#### Admin Tools
+- **List teams** - View all teams
+- **List users** - View organization users
+- **List roles** - View all Grafana roles
+- **Manage permissions** - View and manage resource permissions
+- **Get user/org info** - Current identity and capabilities
 
-<img width="1606" height="898" alt="image" src="https://github.com/user-attachments/assets/521a6174-55ec-4562-9a50-23626df538f9" />
+## AI Observability: Ollama + OTEL + Loki + Tempo
 
-Step by Step Full DevOps Project: We will create a Kubernetes Cluster with High Availability, Auto-Healing, Reliability, Auto-Scaling, Monitoring, and Security on Amazon EKS using Terraform or CloudFormation. To do these, we will create and use GitOps Workflow(ArgoCD), Jenkins, Rancher, Amazon Elastic Kubernetes Service (EKS), RDS MySQL Database, VPC (with both public and private subnets) for Amazon EKS, AWS Secrets Manager, Amazon Route53, Amazon Cloudfront, AWS Certificate Manager, Let's Encrypt-Cert Manager, CloudWatch, Prometheus, and Grafana. We will do these practically, step by step.
+Dockprom-AI extends the stack with a **drop-in observability bundle** for AI/LLM applications:
 
-----------
-### Connect with me 📫 You can learn more about me
+- **Traces** - Apps send OTLP traces → stored in Tempo → viewed in Grafana
+- **Logs** - Docker logs collected by Alloy → stored in Loki → viewed in Grafana
+- **Metrics** - OTLP metrics sent to OTel Collector → exposed for Prometheus
+- **Ollama Gateway** - Envoy proxy with automatic request tracing and metrics
 
-- 🌐 [LinkedIn](https://www.linkedin.com/in/cumhurakkaya/)
-- ✏️ [Medium Articles](https://cmakkaya.medium.com/)  100+ Articles
-- 🌐 [GitHub](https://github.com/cmakkaya/)
+### Make Host Ollama Reachable
+
+The gateway runs in Docker and forwards to `host.docker.internal:11434`. On Linux, ensure Ollama listens on a non-loopback interface:
+
+```bash
+export OLLAMA_HOST=0.0.0.0:11434
+ollama serve
+```
+
+### Use the Ollama Gateway
+
+Point your applications to:
+
+```
+http://<host-ip>:11435
+```
+
+This automatically provides:
+- **Tempo traces** for each request
+- **Prometheus metrics** for RPS, latency, and errors
+- **Loki logs** for gateway and access logs
+
+### Instrument Your Application
+
+For deeper observability, instrument your app with OpenTelemetry.
+
+**For apps running on the host:**
+
+```bash
+export OTEL_SERVICE_NAME="my-app"
+export OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:4318"
+export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+```
+
+**For apps in Docker (same `monitor-net` network):**
+
+```bash
+OTEL_SERVICE_NAME=my-app
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+```
+
+## Setup Grafana
+
+Navigate to `http://<host-ip>:3000` and login with **admin / admin**. 
+
+**Change credentials by modifying your compose file or config:**
+
+```yaml
+grafana:
+  image: grafana/grafana:latest
+  env_file:
+    - config
+```
+
+**Config file format:**
+
+```yaml
+GF_SECURITY_ADMIN_USER=admin
+GF_SECURITY_ADMIN_PASSWORD=changeme
+GF_USERS_ALLOW_SIGN_UP=false
+```
+
+### Pre-configured Datasources
+
+Grafana includes a pre-configured Prometheus datasource:
+
+- **Name:** Prometheus
+- **Type:** Prometheus
+- **URL:** `http://prometheus:9090`
+- **Access:** proxy
+
+Additional datasources:
+- **Loki** - `http://loki:3100`
+- **Tempo** - `http://tempo:3200`
+
+### Pre-configured Dashboards
+
+**Docker Host Dashboard**
+- Server uptime, CPU, and memory metrics
+- System load, processes, and I/O
+- CPU usage by mode
+- Memory and storage usage
+- Network metrics by device
+- Swap usage and activity
+
+**Docker Containers Dashboard**
+- Total containers CPU, memory, and storage
+- Running containers and system load
+- Container CPU usage
+- Container memory usage
+- Container network I/O
+
+**Monitor Services Dashboard**
+- Prometheus uptime and storage metrics
+- Prometheus ingestion rate and scrape metrics
+- Alert tracking and performance graphs
+
+## Define Alerts
+
+Three alert groups are configured in [prometheus/alert.rules](prometheus/alert.rules):
+
+### Monitoring Services Alerts
+
+Alert if monitoring targets (node-exporter, cAdvisor) are down:
+
+```yaml
+- alert: monitor_service_down
+  expr: up == 0
+  for: 30s
+  labels:
+    severity: critical
+  annotations:
+    summary: "Monitor service non-operational"
+    description: "Service {{ $labels.instance }} is down."
+```
+
+### Docker Host Alerts
+
+High CPU load:
+
+```yaml
+- alert: high_cpu_load
+  expr: node_load1 > 1.5
+  for: 30s
+  labels:
+    severity: warning
+  annotations:
+    summary: "Server under high load"
+    description: "Docker host is under high load, avg load 1m: {{ $value }}"
+```
+
+High memory usage:
+
+```yaml
+- alert: high_memory_load
+  expr: (sum(node_memory_MemTotal_bytes) - sum(node_memory_MemFree_bytes + node_memory_Buffers_bytes + node_memory_Cached_bytes)) / sum(node_memory_MemTotal_bytes) * 100 > 85
+  for: 30s
+  labels:
+    severity: warning
+  annotations:
+    summary: "Server memory is almost full"
+    description: "Docker host memory usage: {{ humanize $value }}%"
+```
+
+High storage usage:
+
+```yaml
+- alert: high_storage_load
+  expr: (node_filesystem_size_bytes{fstype="aufs"} - node_filesystem_free_bytes{fstype="aufs"}) / node_filesystem_size_bytes{fstype="aufs"} * 100 > 85
+  for: 30s
+  labels:
+    severity: warning
+  annotations:
+    summary: "Server storage is almost full"
+    description: "Docker host storage usage: {{ humanize $value }}%"
+```
+
+### Docker Containers Alerts
+
+Container down:
+
+```yaml
+- alert: container_down
+  expr: absent(container_memory_usage_bytes{name="service-name"})
+  for: 30s
+  labels:
+    severity: critical
+  annotations:
+    summary: "Container down"
+    description: "Container is down for more than 30 seconds."
+```
+
+Container high CPU:
+
+```yaml
+- alert: container_high_cpu
+  expr: sum(rate(container_cpu_usage_seconds_total{name="service"}[1m])) / count(node_cpu_seconds_total{mode="system"}) * 100 > 10
+  for: 30s
+  labels:
+    severity: warning
+  annotations:
+    summary: "Container high CPU"
+    description: "Container CPU usage: {{ humanize $value }}%"
+```
+
+Container high memory:
+
+```yaml
+- alert: container_high_memory
+  expr: sum(container_memory_usage_bytes{name="service"}) > 1200000000
+  for: 30s
+  labels:
+    severity: warning
+  annotations:
+    summary: "Container high memory"
+    description: "Container memory consumption: {{ humanize $value }}"
+```
+
+## Setup Alerting
+
+AlertManager handles alerts sent by Prometheus and can route them to:
+- Email
+- Slack
+- PagerDuty
+- Webhooks
+- And many more
+
+Configure receivers in [alertmanager/config.yml](alertmanager/config.yml).
+
+### Slack Integration
+
+Create a Slack incoming webhook, then configure AlertManager:
+
+```yaml
+route:
+  receiver: 'slack'
+
+receivers:
+  - name: 'slack'
+    slack_configs:
+      - send_resolved: true
+        text: "{{ .CommonAnnotations.description }}"
+        username: 'Prometheus'
+        channel: '#alerts'
+        api_url: 'https://hooks.slack.com/services/<webhook-id>'
+```
+
+### Reload Alert Rules
+
+Reload alert rules without restarting:
+
+```bash
+curl -X POST http://admin:admin@<host-ip>:9090/-/reload
+```
+
+## Pushing Metrics to Pushgateway
+
+Push metrics from batch jobs or services:
+
+```bash
+echo "some_metric 3.14" | curl --data-binary @- http://user:password@localhost:9091/metrics/job/some_job
+```
+
+Replace `user:password` with your admin credentials.
+
+## Grafana MCP Server Configuration
+
+### Quick Start with Claude Desktop
+
+Add to your MCP client configuration:
+
+```json
+{
+  "mcpServers": {
+    "grafana": {
+      "command": "uvx",
+      "args": ["mcp-grafana"],
+      "env": {
+        "GRAFANA_URL": "http://localhost:3000",
+        "GRAFANA_SERVICE_ACCOUNT_TOKEN": "<your service account token>"
+      }
+    }
+  }
+}
+```
+
+For Grafana Cloud, replace `GRAFANA_URL` with your instance URL.
+
+### Requirements
+
+- **Grafana version 9.0 or later**
+- Valid Grafana API token or service account
+
+### Tools Reference
+
+The MCP server provides 100+ tools across multiple categories:
+
+| Category | Tools | Example |
+|----------|-------|---------|
+| **Dashboard** | search, get, update, patch, create | Manage dashboards programmatically |
+| **Prometheus** | query, metadata, histogram percentiles | PromQL queries and exploration |
+| **Loki** | query logs, metadata, patterns | LogQL queries and log analysis |
+| **Alerting** | read/write rules, manage routing | Alert rule management |
+| **Incident** | search, create, update, read | Incident management |
+| **OnCall** | schedules, shifts, teams, alerts | On-call management |
+| **Navigation** | deeplinks | Generate accurate Grafana links |
+| **Admin** | teams, users, roles, permissions | Administration tools |
+
+See the full tools list in the [Grafana MCP Server documentation](https://github.com/grafana/mcp-grafana#tools).
+
+## RBAC Permissions
+
+Each tool requires specific RBAC permissions. When creating a service account, ensure it has the necessary permissions for your use case.
+
+**Common Scope Patterns:**
+
+- **Broad access:** `datasources:*`, `dashboards:*`, `folders:*`
+- **Limited access:** `datasources:uid:prometheus-uid`, `dashboards:uid:abc123`
+
+**Example full MCP access:**
+
+```
+datasources:* (datasources:read, datasources:query)
+dashboards:* (dashboards:read, dashboards:create, dashboards:write)
+folders:* (for dashboard creation and alert rules)
+teams:* (teams:read)
+global.users:* (users:read)
+```
+
+For more details, see the [Grafana RBAC documentation](https://grafana.com/docs/grafana/latest/administration/roles-and-permissions/access-control/).
+
+## Troubleshooting
+
+### Storage and Filesystem Issues
+
+For storage metrics and free storage graphs, specify the correct filesystem type in your queries. Find your system's filesystem type:
+
+```bash
+# In Prometheus
+node_filesystem_free_bytes
+
+# Or in your dashboard JSON
+"expr": "sum(node_filesystem_free_bytes{fstype=\"btrfs\"})"
+```
+
+### Grafana File Permissions
+
+If upgrading Grafana to v5.2.2+, the user ID changed from 104 to 472.
+
+**Solution:** Change ownership in the container:
+
+```bash
+docker-compose down
+
+# Modify docker-compose.yml to include 'user: root' for grafana service
+docker-compose up -d
+
+docker exec -it --user root grafana bash
+# Inside container:
+chown -R grafana:grafana /var/lib/grafana
+chown -R grafana:grafana /usr/share/grafana
+```
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit pull requests or open issues.
+
+## License
+
+This project is provided as-is. Grafana components are licensed under their respective licenses.
+
+## Resources
+
+- [Prometheus Documentation](https://prometheus.io/docs/)
+- [Grafana Documentation](https://grafana.com/docs/)
+- [Loki Documentation](https://grafana.com/docs/loki/)
+- [Tempo Documentation](https://grafana.com/docs/tempo/)
+- [OpenTelemetry Documentation](https://opentelemetry.io/docs/)
+- [Grafana MCP Server](https://github.com/grafana/mcp-grafana)
