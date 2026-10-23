@@ -71,7 +71,7 @@ Provisioned datasources: **prometheus** (`http://prometheus:9090`, default) and 
 
 ## Alerting
 
-Prometheus loads the rules in `alert-rules.yml` (CPU, memory, network and container state alerts for Docker containers) and sends them to AlertManager at `alertmanager:9093`. Configure receivers in `alert-config.yaml`.
+Prometheus loads the rules in `alert-rules.yml` (container CPU, memory, network, disk I/O, volume and image size, and container down/restart alerts) and sends them to AlertManager at `alertmanager:9093`. Configure receivers in `alert-config.yaml`.
 
 Reload Prometheus configuration and rules without a restart:
 
