@@ -40,6 +40,22 @@ ADMIN_USER='admin' ADMIN_PASSWORD='admin' ADMIN_PASSWORD_HASH='$2a$14$1l.IozJx7x
 docker run --rm caddy caddy hash-password --plaintext 'YOUR_PASSWORD'
 ```
 
+## Pinned Versions
+
+The image tags in `docker-compose.yaml` are pinned to specific releases so deployments remain reproducible. The versions currently used by the compose stack are:
+
+| Service | Image tag | Official releases |
+|---------|-----------|-------------------|
+| Prometheus | `v3.15.1` | [Prometheus releases](https://github.com/prometheus/prometheus/releases) |
+| Grafana | `13.2.4` | [Grafana releases](https://github.com/grafana/grafana/releases) |
+| Loki | `2.9.3` | [Loki releases](https://github.com/grafana/loki/releases) |
+| Tempo | `2.10.0` | [Tempo releases](https://github.com/grafana/tempo/releases) |
+| OpenTelemetry Collector Contrib | `0.117.0` | [OpenTelemetry Collector releases](https://github.com/open-telemetry/opentelemetry-collector-releases/releases) |
+| Alertmanager | `0.34.1` | [Alertmanager releases](https://github.com/prometheus/alertmanager/releases) |
+| Node Exporter | `v1.12.1` | [Node Exporter releases](https://github.com/prometheus/node_exporter/releases) |
+
+When updating a version, choose a stable release from that project's official GitHub releases page, confirm that the corresponding Docker image tag is published, and update both the compose image and this table. Prefer a specific release tag over `latest` to keep deployments predictable.
+
 ## Services
 
 The stack includes the following services:
@@ -175,7 +191,7 @@ Navigate to `http://<host-ip>:3000` and login with **admin / admin**.
 
 ```yaml
 grafana:
-  image: grafana/grafana:latest
+  image: grafana/grafana:13.2.4
   env_file:
     - config
 ```
