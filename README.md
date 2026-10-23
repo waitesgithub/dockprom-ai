@@ -60,6 +60,49 @@ The stack includes the following services:
 | **Alloy** | - | Docker logs collector → Loki |
 | **Caddy** | - | Reverse proxy with basic auth |
 
+## Pinned Versions
+
+All image tags are pinned to exact versions from official GitHub releases (no `latest` tags), so deployments are reproducible. Each image line in `docker-compose.yaml` has a comment linking to its release.
+
+| Service | Image | Version | Released | Releases |
+|---------|-------|---------|----------|----------|
+| Prometheus | `prom/prometheus` | v3.15.1 | Oct 21, 2026 | [link](https://github.com/prometheus/prometheus/releases) |
+| Grafana | `grafana/grafana` | 13.2.4 | Oct 13, 2026 | [link](https://github.com/grafana/grafana/releases) |
+| Loki | `grafana/loki` | 3.7.9 | Oct 20, 2026 | [link](https://github.com/grafana/loki/releases) |
+| Tempo | `grafana/tempo` | 3.1.1 | - | [link](https://github.com/grafana/tempo/releases) |
+| OpenTelemetry Collector Contrib | `otel/opentelemetry-collector-contrib` | 0.163.0 | Oct 14, 2026 | [link](https://github.com/open-telemetry/opentelemetry-collector-releases/releases) |
+| AlertManager | `prom/alertmanager` | v0.34.1 | Sep 17, 2026 | [link](https://github.com/prometheus/alertmanager/releases) |
+| Node Exporter | `prom/node-exporter` | v1.12.1 | Jul 14, 2026 | [link](https://github.com/prometheus/node_exporter/releases) |
+| Pushgateway | `prom/pushgateway` | v1.11.4 | Oct 8, 2026 | [link](https://github.com/prometheus/pushgateway/releases) |
+| Logporter | `lifailon/logporter` | v1.2.0 | Jul 31, 2026 | [link](https://github.com/Lifailon/logporter/releases) |
+| Ollama | `ollama/ollama` | 0.40.9 | - | [link](https://github.com/ollama/ollama/releases) |
+| Caddy | `caddy` | 2.11.7 | Oct 3, 2026 | [link](https://github.com/caddyserver/caddy/releases) |
+| mcp-grafana | `grafana/mcp-grafana` | 2.1.1 | - | [link](https://github.com/grafana/mcp-grafana/releases) |
+
+Pushgateway, Logporter, Ollama, Caddy and mcp-grafana are not currently defined in `docker-compose.yaml`; use the versions above when adding them.
+
+### Major version upgrades
+
+- **Loki** v2 → v3
+- **Tempo** v2 → v3
+- **Logporter** v0 → v1
+
+Review the upstream release notes and migrate configs (`loki-config.yaml`, `tempo.yaml`) before upgrading.
+
+### Versioning strategy and updating
+
+Tags follow upstream semantic versioning exactly as published (some images omit the `v` prefix). To update a service:
+
+1. Check the releases page linked above and read the changelog.
+2. Edit the `image:` tag and its release comment in `docker-compose.yaml`, and update this table.
+3. Run `docker-compose pull <service> && docker-compose up -d <service>`.
+
+### Compatibility notes
+
+- Grafana MCP Server requires Grafana 9.0 or later.
+- Loki 3.x and Tempo 3.x have configuration changes from 2.x; validate configs before upgrading.
+- Upgrade the Grafana stack components together and test dashboards and datasources afterwards.
+
 ## AI-Powered Observability with Grafana MCP Server
 
 Dockprom-AI integrates the **Grafana MCP Server**, enabling AI agents (Claude, Cursor, etc.) to interact with your observability stack.
@@ -175,7 +218,7 @@ Navigate to `http://<host-ip>:3000` and login with **admin / admin**.
 
 ```yaml
 grafana:
-  image: grafana/grafana:latest
+  image: grafana/grafana:13.2.4
   env_file:
     - config
 ```
