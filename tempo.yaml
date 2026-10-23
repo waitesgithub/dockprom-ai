@@ -14,9 +14,13 @@ distributor:
         http:
           endpoint: 0.0.0.0:4318
 
-compactor:
-  compaction:
-    block_retention: 336h
+# Tempo 3.x replaced the compactor with backend-scheduler/backend-worker;
+# block retention now lives here (monolithic mode runs them in-process).
+backend_scheduler:
+  provider:
+    compaction:
+      compaction:
+        block_retention: 336h
 
 storage:
   trace:
