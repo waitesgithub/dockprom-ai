@@ -1,0 +1,105 @@
+name: Unit Tests & Linting
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 0 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  lint-jsonschema:
+    name: Lint JSON Schemas
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up mise
+        uses: ./.github/actions/setup-mise
+      - name: Run linter
+        run: mise run lint-jsonschema
+
+  gofmt:
+    name: Check gofmt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Set up mise
+        uses: ./.github/actions/setup-mise
+      - name: Check gofmt
+        run: mise run lint-gofmt
+
+  lint-go:
+    name: Lint Go
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Set up mise
+        uses: ./.github/actions/setup-mise
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          # Use the golangci-lint that mise installed from mise.toml.
+          install-mode: none
+      # lokiguard is a separate Go module, so the run above does not see it.
+      - name: Run golangci-lint (lokiguard)
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          install-mode: none
+          working-directory: lokiguard
+          args: --config ../.golangci.yaml
+
+  test-unit:
+    name: Test Unit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up mise
+        uses: ./.github/actions/setup-mise
+
+      - name: Run unit tests
+        run: mise run test-unit
+
+  # Catches forgotten `mise run build-ui` runs: rebuilds ui/*/dist from source
+  # and fails if it differs from what's checked in.
+  build-ui:
+    name: Verify UI bundles
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up mise
+        uses: ./.github/actions/setup-mise
+
+      - name: Rebuild UI bundles
+        run: mise run build-ui
+
+      - name: Check MCP App UI
+        working-directory: ui/mcp-apps
+        run: npm run typecheck && npm test
+
+      - name: Fail if UI bundles drifted from sources
+        run: |
+          if ! git diff --exit-code -- ui; then
+            echo "::error::ui/*/dist is out of sync with sources. Run 'mise run build-ui' locally and commit."
+            exit 1
+          fi

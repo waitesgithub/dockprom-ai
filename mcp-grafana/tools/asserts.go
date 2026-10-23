@@ -1,0 +1,157 @@
+package tools
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+
+	mcpgrafana "github.com/grafana/mcp-grafana/v2"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+func newAssertsClient(ctx context.Context) (*Client, error) {
+	cfg := mcpgrafana.GrafanaConfigFromContext(ctx)
+	url := fmt.Sprintf("%s/api/plugins/grafana-asserts-app/resources/asserts/api-server", cfg.URL)
+
+	transport, err := mcpgrafana.BuildTransport(&cfg, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create custom transport: %w", err)
+	}
+
+	client := &http.Client{
+		Transport: transport,
+	}
+
+	return &Client{
+		httpClient: client,
+		baseURL:    url,
+	}, nil
+}
+
+type GetAssertionsParams struct {
+	StartTime  string `json:"startTime" jsonschema:"required,description=The start time in RFC3339 format (e.g. 2024-01-01T00:00:00Z) or relative format (e.g. now-1h)"`
+	EndTime    string `json:"endTime" jsonschema:"required,description=The end time in RFC3339 format (e.g. 2024-01-01T00:00:00Z) or relative format (e.g. now)"`
+	EntityType string `json:"entityType" jsonschema:"description=The type of the entity to list (e.g. Service\\, Node\\, Pod\\, etc.)"`
+	EntityName string `json:"entityName" jsonschema:"description=The name of the entity to list"`
+	Env        string `json:"env,omitempty" jsonschema:"description=The env of the entity to list"`
+	Site       string `json:"site,omitempty" jsonschema:"description=The site of the entity to list"`
+	Namespace  string `json:"namespace,omitempty" jsonschema:"description=The namespace of the entity to list"`
+}
+
+type scope struct {
+	Env       string `json:"env,omitempty"`
+	Site      string `json:"site,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+}
+
+type entity struct {
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	Scope scope  `json:"scope"`
+}
+
+type requestBody struct {
+	StartTime             int64    `json:"startTime"`
+	EndTime               int64    `json:"endTime"`
+	EntityKeys            []entity `json:"entityKeys"`
+	SuggestionSrcEntities []entity `json:"suggestionSrcEntities"`
+	AlertCategories       []string `json:"alertCategories"`
+}
+
+func (c *Client) fetchAssertsData(ctx context.Context, urlPath string, method string, reqBody any) (string, error) {
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+urlPath, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer func() {
+		_ = resp.Body.Close() //nolint:errcheck
+	}()
+
+	body, err := readResponseBody(resp.Body, defaultResponseLimitBytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return string(body), nil
+}
+
+func getAssertions(ctx context.Context, args GetAssertionsParams) (string, error) {
+	startTime, err := parseStartTime(args.StartTime)
+	if err != nil {
+		return "", fmt.Errorf("parsing start time: %w", err)
+	}
+	endTime, err := parseEndTime(args.EndTime)
+	if err != nil {
+		return "", fmt.Errorf("parsing end time: %w", err)
+	}
+
+	client, err := newAssertsClient(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to create Asserts client: %w", err)
+	}
+
+	// Create request body
+	reqBody := requestBody{
+		StartTime: startTime.UnixMilli(),
+		EndTime:   endTime.UnixMilli(),
+		EntityKeys: []entity{
+			{
+				Name:  args.EntityName,
+				Type:  args.EntityType,
+				Scope: scope{},
+			},
+		},
+		SuggestionSrcEntities: []entity{},
+		AlertCategories:       []string{"saturation", "amend", "anomaly", "failure", "error"},
+	}
+
+	if args.Env != "" {
+		reqBody.EntityKeys[0].Scope.Env = args.Env
+	}
+	if args.Site != "" {
+		reqBody.EntityKeys[0].Scope.Site = args.Site
+	}
+	if args.Namespace != "" {
+		reqBody.EntityKeys[0].Scope.Namespace = args.Namespace
+	}
+
+	data, err := client.fetchAssertsData(ctx, "/v1/assertions/llm-summary", "POST", reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch data: %w", err)
+	}
+
+	return data, nil
+}
+
+var GetAssertions = mcpgrafana.MustTool(
+	"get_assertions",
+	"Get assertion summary for a given entity with its type, name, env, site, namespace, and a time range",
+	getAssertions,
+	mcpgrafana.WithTitleAnnotation("Get assertions summary"),
+	mcpgrafana.WithIdempotentHintAnnotation(true),
+	mcpgrafana.WithReadOnlyHintAnnotation(true),
+	mcpgrafana.WithDestructiveHintAnnotation(false),
+	mcpgrafana.WithOpenWorldHintAnnotation(false),
+	mcpgrafana.RequiresPermissions("plugins.app:access"),
+)
+
+func AddAssertsTools(s *mcp.Server) {
+	GetAssertions.Register(s)
+}

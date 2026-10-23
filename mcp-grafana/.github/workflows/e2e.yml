@@ -1,0 +1,70 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 0 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  # Calls tools directly over each transport, with no LLM in the loop. Needs no
+  # secrets, so it runs on fork PRs too.
+  test-python-e2e:
+    name: Python E2E Tests (${{ matrix.transport }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        transport: [stdio, sse, streamable-http]
+    env:
+      GRAFANA_USAGE_STATS: disabled
+      # Set auth here so stdio transport and background process pick them up
+      GRAFANA_USERNAME: admin
+      GRAFANA_PASSWORD: admin
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Set up mise
+        uses: ./.github/actions/setup-mise
+
+      - name: Install Python dependencies
+        run: |
+          cd tests
+          uv sync --all-groups
+
+      - name: Start docker-compose services
+        uses: hoverkraft-tech/compose-action@3c795f9eb1db588146398cd8e4ab0fe98e0f92db
+        with:
+          compose-file: "docker-compose.yaml"
+
+      # `up --wait` on the whole project fails as soon as a one-shot seed
+      # container exits, so wait on the services the tests talk to instead.
+      - name: Wait for Grafana and Prometheus
+        run: |
+          docker compose up -d --wait --wait-timeout 300 grafana
+          curl -sf --retry 60 --retry-delay 1 --retry-all-errors http://localhost:9090/-/ready
+
+      - name: Build mcp-grafana
+        run: go build -o dist/mcp-grafana ./cmd/mcp-grafana
+
+      - name: Start MCP server in background
+        if: matrix.transport != 'stdio'
+        run: |
+          nohup ./dist/mcp-grafana -t ${{ matrix.transport }} --enabled-tools search,datasource,incident,prometheus,loki,elasticsearch,influxdb,alerting,dashboard,folder,oncall,asserts,pyroscope,navigation,tempo,annotations,rendering,admin,sql,cloudwatch > mcp.log 2>&1 &
+          curl -sf --retry 30 --retry-delay 1 --retry-all-errors http://localhost:8000/healthz
+
+      - name: Run Python e2e tests
+        env:
+          MCP_GRAFANA_PATH: ../dist/mcp-grafana
+          MCP_TRANSPORT: ${{ matrix.transport }}
+        run: |
+          cd tests
+          uv run pytest
+
+      - if: failure() && matrix.transport != 'stdio'
+        name: Print MCP logs
+        run: cat mcp.log 2>/dev/null || echo "No log file found (mcp.log)"

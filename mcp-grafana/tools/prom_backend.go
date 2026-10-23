@@ -1,0 +1,282 @@
+package tools
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/grafana/grafana-openapi-client-go/models"
+	mcpgrafana "github.com/grafana/mcp-grafana/v2"
+	"github.com/prometheus/client_golang/api"
+	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/prometheus/common/model"
+)
+
+// promBackend abstracts the differences between datasource types that support
+// PromQL-compatible queries (native Prometheus, Cloud Monitoring, etc.).
+type promBackend interface {
+	// Query executes a PromQL query (instant or range) and returns the result
+	// along with any warnings the datasource reported (e.g. partial responses
+	// from a Thanos store).
+	Query(ctx context.Context, expr string, queryType string, start, end time.Time, stepSeconds int) (model.Value, promv1.Warnings, error)
+
+	// LabelNames returns label names, optionally filtered by matchers and time range.
+	LabelNames(ctx context.Context, matchers []string, start, end time.Time) ([]string, error)
+
+	// LabelValues returns values for a label, optionally filtered by matchers and time range.
+	LabelValues(ctx context.Context, labelName string, matchers []string, start, end time.Time) ([]string, error)
+
+	// MetricNames returns metric names which match the regex, with an optional limit on results.
+	MetricNames(ctx context.Context, re *regexp.Regexp, limit int, start, end time.Time) ([]string, error)
+
+	// MetricMetadata returns metadata about metrics (description, type, unit).
+	MetricMetadata(ctx context.Context, metric string, limit int) (map[string][]promv1.Metadata, error)
+}
+
+// backendForDatasource looks up the datasource type and returns the appropriate backend.
+// An optional projectOverride can be passed for Cloud Monitoring datasources to override
+// (or substitute for) the defaultProject configured on the datasource.
+func backendForDatasource(ctx context.Context, uid string, projectOverride ...string) (promBackend, error) {
+	ds, err := getDatasourceByUID(ctx, GetDatasourceByUIDParams{UID: uid})
+	if err != nil {
+		return nil, err
+	}
+
+	proj := ""
+	if len(projectOverride) > 0 {
+		proj = projectOverride[0]
+	}
+
+	switch ds.Type {
+	case "stackdriver":
+		return newCloudMonitoringBackend(ctx, ds, proj)
+	case victoriaMetricsDatasourceType:
+		return newVictoriaMetricsBackend(ctx, uid, ds)
+	case "tempo":
+		return nil, fmt.Errorf("datasource %s is of type %q, which is not a supported Prometheus-compatible datasource", uid, ds.Type)
+	default:
+		// For prometheus, thanos, cortex, mimir, and any other Prometheus-compatible datasource,
+		// use the native Prometheus client via the datasource proxy.
+		return newPrometheusBackend(ctx, uid, ds)
+	}
+}
+
+// prometheusBackend wraps the Prometheus client library, talking to the
+// datasource via Grafana's datasource proxy (/api/datasources/uid/{uid}/resources).
+type prometheusBackend struct {
+	api promv1.API
+}
+
+func newPrometheusBackend(ctx context.Context, uid string, ds *models.DataSource) (*prometheusBackend, error) {
+	cfg := mcpgrafana.GrafanaConfigFromContext(ctx)
+	grafanaURL := trimTrailingSlash(cfg.URL)
+	resourcesBase, proxyBase := datasourceProxyPaths(uid)
+	primaryBase, fallbackBase := resourcesBase, proxyBase
+	legacyMode := false
+	if numericBase, uidBase, ok := fallbackProxyBases(ctx, uid); ok {
+		// The datasource was resolved through the frontend-settings fallback,
+		// meaning this deployment's metadata API is inaccessible — in practice
+		// Grafana before 9.0, which has no uid-based routes at all (8.x answers
+		// them with a 400 "id is invalid", 7.x with a 500). Route through the
+		// numeric-id proxy path directly, keeping the uid-based proxy route
+		// only as the transport-level fallback for the opposite case: a newer
+		// Grafana with an RBAC-restricted token, where the numeric routes may
+		// be disabled (404, off by default since Grafana 13).
+		primaryBase, fallbackBase = numericBase, uidBase
+		legacyMode = true
+	}
+	url := grafanaURL + primaryBase
+
+	// A nil base selects cfg.HTTPTransport(), so an embedder's BaseTransport
+	// (tracing, connection pooling, limits) applies here as for other tools.
+	rt, err := mcpgrafana.BuildTransport(&cfg, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create custom transport: %w", err)
+	}
+
+	// Only convert POST→GET if the datasource is configured to use GET.
+	// The Prometheus client library sends POST first and only falls back to GET
+	// on 405/501 responses, but Grafana's datasource proxy returns 500 for POST
+	// requests to datasources configured with httpMethod: GET.
+	// See https://github.com/grafana/mcp-grafana/issues/632
+	if jsonData, ok := ds.JSONData.(map[string]interface{}); ok {
+		if httpMethod, ok := jsonData["httpMethod"].(string); ok && strings.EqualFold(httpMethod, "GET") {
+			rt = &postToGetRoundTripper{underlying: rt}
+		}
+	}
+
+	// Wrap with fallback transport: try the primary base first, fall back to
+	// the alternate for compatibility with different Grafana deployments (see
+	// fallback_transport.go for the per-mode retry rules).
+	if legacyMode {
+		rt = newLegacyDatasourceFallbackTransport(rt, primaryBase, fallbackBase)
+	} else {
+		rt = newDatasourceFallbackTransport(rt, primaryBase, fallbackBase)
+	}
+
+	rt = &prometheusResponseLimitTransport{underlying: rt}
+	c, err := api.NewClient(api.Config{
+		Address:      url,
+		RoundTripper: &prometheusMetricNamesTransport{underlying: rt},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("creating Prometheus client: %w", err)
+	}
+
+	return &prometheusBackend{api: promv1.NewAPI(c)}, nil
+}
+
+func (b *prometheusBackend) Query(ctx context.Context, expr string, queryType string, start, end time.Time, stepSeconds int) (model.Value, promv1.Warnings, error) {
+	switch queryType {
+	case "range":
+		step := time.Duration(stepSeconds) * time.Second
+		result, warnings, _, err := b.api.QueryRange(ctx, expr, promv1.Range{
+			Start: start,
+			End:   end,
+			Step:  step,
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("querying Prometheus range: %w", promErrorWithDetail(err))
+		}
+		return result, warnings, nil
+	case "instant":
+		result, warnings, _, err := b.api.Query(ctx, expr, end)
+		if err != nil {
+			return nil, nil, fmt.Errorf("querying Prometheus instant: %w", promErrorWithDetail(err))
+		}
+		return result, warnings, nil
+	default:
+		return nil, nil, fmt.Errorf("invalid query type: %s", queryType)
+	}
+}
+
+func (b *prometheusBackend) LabelNames(ctx context.Context, matchers []string, start, end time.Time) ([]string, error) {
+	names, _, _, err := b.api.LabelNames(ctx, matchers, start, end)
+	if err != nil {
+		return nil, fmt.Errorf("listing Prometheus label names: %w", promErrorWithDetail(err))
+	}
+	result := make([]string, len(names))
+	for i, n := range names {
+		result[i] = string(n)
+	}
+	return result, nil
+}
+
+func (b *prometheusBackend) LabelValues(ctx context.Context, labelName string, matchers []string, start, end time.Time) ([]string, error) {
+	values, _, _, err := b.api.LabelValues(ctx, labelName, matchers, start, end)
+	if err != nil {
+		return nil, fmt.Errorf("listing Prometheus label values: %w", promErrorWithDetail(err))
+	}
+	result := make([]string, len(values))
+	for i, v := range values {
+		result[i] = string(v)
+	}
+	return result, nil
+}
+
+func (b *prometheusBackend) MetricNames(ctx context.Context, re *regexp.Regexp, limit int, start, end time.Time) ([]string, error) {
+	var matchers []string
+	if re != nil {
+		// make the regex matching behavior behave like the previous client-side Go matching behaviour
+		pattern := "(?s:.*)(?-s:" + re.String() + ")(?s:.*)"
+		// The non-empty matcher keeps regexes like ".*" valid as a series selector.
+		matchers = []string{fmt.Sprintf(`{__name__!="",__name__=~%q}`, pattern)}
+	}
+	values, _, _, err := b.api.LabelValues(ctx, "__name__", matchers, start, end, promv1.WithLimit(uint64(limit)))
+	if err != nil {
+		return nil, fmt.Errorf("listing Prometheus metric names: %w", promErrorWithDetail(err))
+	}
+	recordMetricNames(ctx, "prometheus", len(values))
+	result := make([]string, len(values))
+	for i, value := range values {
+		result[i] = string(value)
+	}
+	return result, nil
+}
+
+func (b *prometheusBackend) MetricMetadata(ctx context.Context, metric string, limit int) (map[string][]promv1.Metadata, error) {
+	metadata, err := b.api.Metadata(ctx, metric, fmt.Sprintf("%d", limit))
+	if err != nil {
+		return nil, fmt.Errorf("listing Prometheus metric metadata: %w", promErrorWithDetail(err))
+	}
+	return metadata, nil
+}
+
+// promErrorWithDetail adds the response body to errors from the Prometheus
+// client. For status codes other than 400 and 422 the client stores the body in
+// Error.Detail, which Error() leaves out, so a Thanos query timeout (503) would
+// otherwise surface as just "server error: 503".
+func promErrorWithDetail(err error) error {
+	var apiErr *promv1.Error
+	if !errors.As(err, &apiErr) || apiErr.Detail == "" {
+		return err
+	}
+	var body struct {
+		ErrorType string `json:"errorType"`
+		Error     string `json:"error"`
+	}
+	if json.Unmarshal([]byte(apiErr.Detail), &body) == nil && body.Error != "" {
+		if body.ErrorType != "" {
+			return fmt.Errorf("%w: %s: %s", err, body.ErrorType, body.Error)
+		}
+		return fmt.Errorf("%w: %s", err, body.Error)
+	}
+	detail := strings.TrimSpace(apiErr.Detail)
+	if len(detail) > 1024 {
+		detail = detail[:1024] + "..."
+	}
+	return fmt.Errorf("%w: %s", err, detail)
+}
+
+// postToGetRoundTripper converts POST requests to GET requests by moving the
+// URL-encoded form body to the query string. This is needed because the
+// Prometheus client library's DoGetFallback sends POST first and only falls
+// back to GET on 405/501 responses, but Grafana's datasource resources API
+// returns 500 for POST requests to datasources configured with httpMethod: GET.
+type postToGetRoundTripper struct {
+	underlying http.RoundTripper
+}
+
+func (rt *postToGetRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Method != http.MethodPost {
+		return rt.underlying.RoundTrip(req)
+	}
+
+	cloned := req.Clone(req.Context())
+	cloned.Method = http.MethodGet
+
+	// Move URL-encoded form body to query string
+	if req.Body != nil && strings.HasPrefix(req.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
+		body, err := io.ReadAll(req.Body)
+		if err != nil {
+			return nil, fmt.Errorf("reading request body: %w", err)
+		}
+
+		params, err := url.ParseQuery(string(body))
+		if err != nil {
+			return nil, fmt.Errorf("parsing request body: %w", err)
+		}
+
+		// Merge body params into query string
+		q := cloned.URL.Query()
+		for k, vs := range params {
+			for _, v := range vs {
+				q.Add(k, v)
+			}
+		}
+		cloned.URL.RawQuery = q.Encode()
+
+		cloned.Body = nil
+		cloned.ContentLength = 0
+		cloned.Header.Del("Content-Type")
+	}
+
+	return rt.underlying.RoundTrip(cloned)
+}

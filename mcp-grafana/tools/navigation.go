@@ -1,0 +1,554 @@
+package tools
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	mcpgrafana "github.com/grafana/mcp-grafana/v2"
+)
+
+type GenerateDeeplinkParams struct {
+	ResourceType        string                       `json:"resourceType" jsonschema:"required,description=Type of resource: dashboard\\, panel\\, or explore"`
+	DashboardUID        *string                      `json:"dashboardUid,omitempty" jsonschema:"description=Dashboard UID (for stored dashboards). Mutually exclusive with provisioningPreview for dashboard and panel types."`
+	ProvisioningPreview *DeeplinkProvisioningPreview `json:"provisioningPreview,omitempty" jsonschema:"description=Identifies a dashboard staged on a provisioning repository branch (e.g. a git-sync PR preview). Mutually exclusive with dashboardUid for dashboard and panel types."`
+	DatasourceUID       *string                      `json:"datasourceUid,omitempty" jsonschema:"description=Datasource UID (required for explore type)"`
+	PanelID             *int                         `json:"panelId,omitempty" jsonschema:"description=Panel ID (required for panel type)"`
+	Queries             []map[string]interface{}     `json:"queries,omitempty" jsonschema:"description=List of query objects for explore links (e.g. [{\"refId\":\"A\"\\,\"expr\":\"up\"}])"`
+	QueryParams         map[string]string            `json:"queryParams,omitempty" jsonschema:"description=Additional URL query parameters (for dashboard/panel types)"`
+	TimeRange           *TimeRange                   `json:"timeRange,omitempty" jsonschema:"description=Time range for the link"`
+	Shorten             bool                         `json:"shorten,omitempty" jsonschema:"description=If true\\, try to shorten the generated URL to /goto/<uid>. If shortening fails\\, an error containing the full deeplink is returned."`
+}
+
+// DeeplinkProvisioningPreview identifies a not-yet-applied dashboard inside a
+// provisioning repository. The generated URL opens Grafana's preview view for
+// that file; pullRequestUrl is read by the preview banner to surface the
+// upstream PR.
+type DeeplinkProvisioningPreview struct {
+	Repo           string `json:"repo" jsonschema:"required,description=Provisioning repository slug (the repository name)."`
+	Path           string `json:"path" jsonschema:"required,description=Path to the dashboard file within the repository\\, relative to its root."`
+	Ref            string `json:"ref,omitempty" jsonschema:"description=Branch or commit SHA. Defaults to the repository's main branch when omitted."`
+	PullRequestURL string `json:"pullRequestUrl,omitempty" jsonschema:"description=Upstream pull request URL to surface in Grafana's preview banner."`
+}
+
+const (
+	// exploreSchemaVersion is the Explore URL state schema used by Grafana 10.2+.
+	exploreSchemaVersion = "1"
+	// explorePaneID keys the single pane this tool generates. Grafana uses
+	// short random ids in the UI; any stable key works for a one-pane link.
+	explorePaneID = "a"
+	// explorePanesMinMajor and explorePanesMinMinor are the first Grafana
+	// version that reads Explore state from `panes`.
+	explorePanesMinMajor = 10
+	explorePanesMinMinor = 2
+)
+
+type TimeRange struct {
+	From string `json:"from" jsonschema:"description=Start time (e.g.\\, 'now-1h')"`
+	To   string `json:"to" jsonschema:"description=End time (e.g.\\, 'now')"`
+}
+
+func grafanaBaseURLFromContext(ctx context.Context) (string, error) {
+	// Prefer the public URL from the Grafana client (fetched from /api/frontend/settings),
+	// falling back to the configured URL if the client is not available or has no public URL.
+	var baseURL string
+	if gc := mcpgrafana.GrafanaClientFromContext(ctx); gc != nil && gc.PublicURL != "" {
+		baseURL = strings.TrimRight(gc.PublicURL, "/")
+	} else {
+		config := mcpgrafana.GrafanaConfigFromContext(ctx)
+		baseURL = config.URL
+	}
+
+	if baseURL == "" {
+		return "", fmt.Errorf("grafana url not configured. Please set GRAFANA_URL environment variable")
+	}
+
+	// Validate baseURL because gc.PublicURL is populated from Grafana's
+	// /api/frontend/settings appUrl response, which is not covered by the
+	// configured URL validation. A misconfigured Grafana can return a malformed appUrl that flows into deeplink construction
+	// (e.g. http://%gg/d/<uid>) unless checked here.
+	if err := mcpgrafana.ValidateGrafanaURL(baseURL); err != nil {
+		return "", fmt.Errorf("grafana url is invalid: %w. Please set GRAFANA_URL environment variable", err)
+	}
+	return baseURL, nil
+}
+
+func generateDeeplinkWithMode(ctx context.Context, args GenerateDeeplinkParams, allowShorten bool) (string, error) {
+	baseURL, err := grafanaBaseURLFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	var deeplink string
+
+	switch strings.ToLower(args.ResourceType) {
+	case "dashboard":
+		target, err := buildDashboardTargetURL(baseURL, args.DashboardUID, args.ProvisioningPreview)
+		if err != nil {
+			return "", err
+		}
+		deeplink = target
+
+	case "panel":
+		target, err := buildDashboardTargetURL(baseURL, args.DashboardUID, args.ProvisioningPreview)
+		if err != nil {
+			return "", err
+		}
+		if args.PanelID == nil {
+			return "", fmt.Errorf("panelId is required for panel links")
+		}
+		separator := "?"
+		if strings.Contains(target, "?") {
+			separator = "&"
+		}
+		deeplink = fmt.Sprintf("%s%sviewPanel=%d", target, separator, *args.PanelID)
+
+	case "explore":
+		if args.DatasourceUID == nil {
+			return "", fmt.Errorf("datasourceUid is required for explore links")
+		}
+
+		// Grafana 10.2+ reads Explore state from `panes`; older versions
+		// ignore it and read `left`.
+		buildParams := buildExploreLeftParams
+		if supportsExplorePanes(mcpgrafana.GrafanaVersion(ctx)) {
+			buildParams = buildExplorePanesParams
+		}
+		params, err := buildParams(args)
+		if err != nil {
+			return "", err
+		}
+		deeplink = fmt.Sprintf("%s/explore?%s", baseURL, params.Encode())
+
+		// For explore, the time range is embedded in the state object — skip
+		// the generic time range block below by clearing it.
+		args.TimeRange = nil
+
+	default:
+		return "", fmt.Errorf("unsupported resource type: %s. Supported types are: dashboard, panel, explore", args.ResourceType)
+	}
+
+	if args.TimeRange != nil {
+		separator := "?"
+		if strings.Contains(deeplink, "?") {
+			separator = "&"
+		}
+		timeParams := url.Values{}
+		if args.TimeRange.From != "" {
+			timeParams.Set("from", toGrafanaTimeParam(args.TimeRange.From))
+		}
+		if args.TimeRange.To != "" {
+			timeParams.Set("to", toGrafanaTimeParam(args.TimeRange.To))
+		}
+		if len(timeParams) > 0 {
+			deeplink = fmt.Sprintf("%s%s%s", deeplink, separator, timeParams.Encode())
+		}
+	}
+
+	if len(args.QueryParams) > 0 {
+		separator := "?"
+		if strings.Contains(deeplink, "?") {
+			separator = "&"
+		}
+		additionalParams := url.Values{}
+		for key, value := range args.QueryParams {
+			additionalParams.Set(key, value)
+		}
+		deeplink = fmt.Sprintf("%s%s%s", deeplink, separator, additionalParams.Encode())
+	}
+
+	if !args.Shorten {
+		return deeplink, nil
+	}
+
+	if !allowShorten {
+		mcpgrafana.LoggerFromContext(ctx).DebugContext(ctx,
+			"generate_deeplink shorten requested while write tools are disabled; returning full URL")
+		return deeplink, nil
+	}
+
+	shortURL, err := shortenURL(ctx, deeplink)
+	if err != nil {
+		// Fail visibly: silently returning the long URL hides that the
+		// caller did not get what it asked for. The error carries the full
+		// deeplink so it is still usable.
+		return "", fmt.Errorf("failed to shorten deeplink (full URL: %s): %w", deeplink, err)
+	}
+
+	return shortURL, nil
+}
+
+func generateDeeplink(ctx context.Context, args GenerateDeeplinkParams) (string, error) {
+	return generateDeeplinkWithMode(ctx, args, true)
+}
+
+func generateDeeplinkReadOnly(ctx context.Context, args GenerateDeeplinkParams) (string, error) {
+	return generateDeeplinkWithMode(ctx, args, false)
+}
+
+func shortenURL(ctx context.Context, longURL string) (string, error) {
+	publicBaseURL, err := grafanaBaseURLFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(longURL) == "" {
+		return "", fmt.Errorf("url is required")
+	}
+
+	parsedURL, err := url.Parse(longURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid url: %w", err)
+	}
+	path := parsedURL.RequestURI()
+	if !strings.HasPrefix(path, "/") {
+		return "", fmt.Errorf("url must include an absolute path")
+	}
+
+	// When Grafana is served from a sub-path (e.g. root_url includes
+	// "/grafana"), the deeplink URL contains that prefix. Grafana's /goto
+	// redirect prepends the sub-path itself, so we must strip it here to
+	// avoid doubling (e.g. "/grafana/grafana/d/…" → 404).
+	publicParsed, err := url.Parse(publicBaseURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid public base url: %w", err)
+	}
+	if basePath := strings.TrimRight(publicParsed.Path, "/"); basePath != "" {
+		path = strings.TrimPrefix(path, basePath)
+	}
+
+	// Grafana's /api/short-urls endpoint rejects absolute paths
+	// (messageId "shorturl.absolute-path"), so strip the leading slash.
+	relativePath := strings.TrimPrefix(path, "/")
+
+	payload, err := json.Marshal(map[string]string{"path": relativePath})
+	if err != nil {
+		return "", fmt.Errorf("marshal short-url payload: %w", err)
+	}
+
+	cfg := mcpgrafana.GrafanaConfigFromContext(ctx)
+	apiBaseURL := strings.TrimRight(cfg.URL, "/")
+	if apiBaseURL == "" {
+		apiBaseURL = publicBaseURL
+	}
+	if err := mcpgrafana.ValidateGrafanaURL(apiBaseURL); err != nil {
+		return "", fmt.Errorf("grafana api url is invalid: %w", err)
+	}
+
+	transport, err := mcpgrafana.BuildTransport(&cfg, nil)
+	if err != nil {
+		return "", fmt.Errorf("build transport: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiBaseURL+"/api/short-urls", bytes.NewReader(payload))
+	if err != nil {
+		return "", fmt.Errorf("create short-url request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := (&http.Client{Transport: transport}).Do(req)
+	if err != nil {
+		return "", fmt.Errorf("create short url: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := readResponseBody(resp.Body, defaultResponseLimitBytes)
+	if err != nil {
+		return "", fmt.Errorf("read short-url response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("create short url failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var shortResp struct {
+		URL string `json:"url"`
+		UID string `json:"uid"`
+	}
+	if err := json.Unmarshal(body, &shortResp); err != nil {
+		return "", fmt.Errorf("decode short-url response: %w", err)
+	}
+	if shortResp.URL == "" {
+		return "", fmt.Errorf("short-url response missing url field")
+	}
+
+	normalizedURL, err := normalizeShortURLWithPublicBase(shortResp.URL, publicBaseURL)
+	if err != nil {
+		return "", err
+	}
+	return normalizedURL, nil
+}
+
+func normalizeShortURLWithPublicBase(rawShortURL, publicBaseURL string) (string, error) {
+	publicBase, err := url.Parse(publicBaseURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid public base url: %w", err)
+	}
+
+	shortURL, err := url.Parse(rawShortURL)
+	if err != nil {
+		return "", fmt.Errorf("short-url response contains invalid url: %w", err)
+	}
+
+	// Keep path/query/fragment from Grafana response but always use public
+	// scheme/host so shortened links match deeplink host behavior.
+	if shortURL.IsAbs() {
+		shortURL.Scheme = publicBase.Scheme
+		shortURL.Host = publicBase.Host
+		return shortURL.String(), nil
+	}
+
+	if strings.HasPrefix(rawShortURL, "/") {
+		return strings.TrimRight(publicBaseURL, "/") + rawShortURL, nil
+	}
+
+	return publicBase.ResolveReference(shortURL).String(), nil
+}
+
+var GenerateDeeplink = mcpgrafana.MustTool(
+	"generate_deeplink",
+	"Generate deeplink URLs for Grafana resources. Supports dashboards (requires dashboardUid or provisioningPreview), panels (requires dashboardUid or provisioningPreview, plus panelId), and Explore queries (requires datasourceUid and optionally queries). For dashboard and panel links, provisioningPreview points at a dashboard staged on a provisioning repository branch (e.g. a git-sync PR preview). For explore links, the time range and queries are embedded inside the Grafana explore state. Set shorten=true to return a /goto/<uid> short URL instead; if shortening fails, an error containing the full deeplink is returned.",
+	generateDeeplink,
+	mcpgrafana.WithTitleAnnotation("Generate navigation deeplink"),
+	mcpgrafana.WithIdempotentHintAnnotation(false),
+	mcpgrafana.WithReadOnlyHintAnnotation(false),
+	mcpgrafana.WithDestructiveHintAnnotation(false),
+	mcpgrafana.WithOpenWorldHintAnnotation(false),
+	mcpgrafana.RequiresPermissions(), // short URLs need no RBAC action
+)
+
+var GenerateDeeplinkReadOnly = mcpgrafana.MustTool(
+	"generate_deeplink",
+	"Generate deeplink URLs for Grafana resources. Supports dashboards (requires dashboardUid or provisioningPreview), panels (requires dashboardUid or provisioningPreview, plus panelId), and Explore queries (requires datasourceUid and optionally queries). For dashboard and panel links, provisioningPreview points at a dashboard staged on a provisioning repository branch (e.g. a git-sync PR preview). In read-only mode, shorten=true is accepted but ignored and the full deeplink is returned.",
+	generateDeeplinkReadOnly,
+	mcpgrafana.WithTitleAnnotation("Generate navigation deeplink"),
+	mcpgrafana.WithIdempotentHintAnnotation(true),
+	mcpgrafana.WithReadOnlyHintAnnotation(true),
+	mcpgrafana.WithDestructiveHintAnnotation(false),
+	mcpgrafana.WithOpenWorldHintAnnotation(false),
+	mcpgrafana.RequiresPermissions(), // short URLs need no RBAC action
+)
+
+func AddNavigationTools(s *mcp.Server, enableWriteTools bool) {
+	if enableWriteTools {
+		GenerateDeeplink.Register(s)
+		return
+	}
+	GenerateDeeplinkReadOnly.Register(s)
+}
+
+// buildDashboardTargetURL returns the dashboard or provisioning-preview URL
+// (without time range or extra query params) for the dashboard and panel
+// resource types. Exactly one of dashboardUid or preview must be supplied.
+func buildDashboardTargetURL(baseURL string, dashboardUID *string, preview *DeeplinkProvisioningPreview) (string, error) {
+	// Treat an empty dashboardUid the same as unset, so a non-nil but blank
+	// value doesn't produce a "/d/" URL with no UID.
+	hasUID := dashboardUID != nil && *dashboardUID != ""
+	switch {
+	case hasUID && preview != nil:
+		return "", fmt.Errorf("dashboardUid and provisioningPreview are mutually exclusive; pass exactly one")
+	case !hasUID && preview == nil:
+		return "", fmt.Errorf("either dashboardUid or provisioningPreview must be set")
+	case hasUID:
+		return fmt.Sprintf("%s/d/%s", baseURL, *dashboardUID), nil
+	}
+
+	// url.PathEscape doesn't touch `..` (dots are valid path chars), so the
+	// generated link could point at an unintended Grafana page without these
+	// explicit checks. Shared helpers also used by rendering and the
+	// provisioning file tool.
+	if err := validateRepoSlug("provisioningPreview.repo", preview.Repo); err != nil {
+		return "", err
+	}
+	if err := validateRepoPath("provisioningPreview.path", preview.Path); err != nil {
+		return "", err
+	}
+
+	escapedPath := (&url.URL{Path: strings.TrimLeft(preview.Path, "/")}).EscapedPath()
+	target := fmt.Sprintf("%s/dashboard/provisioning/%s/preview/%s",
+		baseURL, url.PathEscape(preview.Repo), escapedPath)
+
+	q := url.Values{}
+	if preview.Ref != "" {
+		q.Set("ref", preview.Ref)
+	}
+	if preview.PullRequestURL != "" {
+		q.Set("pull_request_url", preview.PullRequestURL)
+	}
+	if len(q) > 0 {
+		target += "?" + q.Encode()
+	}
+	return target, nil
+}
+
+// supportsExplorePanes reports whether a Grafana version reads Explore state
+// from `panes`. Grafana 10.2 introduced it alongside schemaVersion; earlier
+// versions ignore both and read `left`.
+//
+// An empty or unparseable version means unknown. mcpgrafana.GrafanaVersion
+// fails soft, so an unreadable settings endpoint is indistinguishable from an
+// ancient Grafana; unknown is treated as 10.2+ so that instances which cannot
+// report their version keep the format the overwhelming majority of them
+// understand.
+func supportsExplorePanes(version string) bool {
+	major, minor, ok := parseMajorMinor(version)
+	if !ok {
+		return true
+	}
+	if major != explorePanesMinMajor {
+		return major > explorePanesMinMajor
+	}
+	return minor >= explorePanesMinMinor
+}
+
+// parseMajorMinor extracts the major and minor numbers from a Grafana version
+// such as "10.2.3" or "11.0.0-64123pre". A missing minor reads as zero; a
+// pre-release or build suffix on either component is ignored.
+func parseMajorMinor(version string) (int, int, bool) {
+	parts := strings.SplitN(strings.TrimPrefix(strings.TrimSpace(version), "v"), ".", 3)
+	major, ok := leadingInt(parts[0])
+	if !ok {
+		return 0, 0, false
+	}
+	if len(parts) < 2 {
+		return major, 0, true
+	}
+	minor, ok := leadingInt(parts[1])
+	if !ok {
+		return 0, 0, false
+	}
+	return major, minor, true
+}
+
+// leadingInt parses the digits at the start of s, ignoring any suffix. It
+// reports false when s does not start with a digit.
+func leadingInt(s string) (int, bool) {
+	end := 0
+	for end < len(s) && s[end] >= '0' && s[end] <= '9' {
+		end++
+	}
+	if end == 0 {
+		return 0, false
+	}
+	n, err := strconv.Atoi(s[:end])
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
+// buildExplorePanesParams builds Explore URL state in the `panes` format read
+// by Grafana 10.2+.
+//
+// Links built with `left` are migrated on load, and that migration is lossy
+// for datasource-specific query models: a Cloud Monitoring PromQL query goes
+// in as queryType "promQL" with a sibling promQLQuery, and comes back as an
+// empty Builder query with promQLQuery nested inside timeSeriesList, so the
+// pane renders nothing.
+func buildExplorePanesParams(args GenerateDeeplinkParams) (url.Values, error) {
+	pane := map[string]interface{}{
+		"datasource": *args.DatasourceUID,
+	}
+	if len(args.Queries) > 0 {
+		// Queries carry their own datasource reference in the pane format.
+		// Preserve a caller-supplied one — it may include the plugin type,
+		// which some query editors need to select the right editor mode —
+		// and only fall back to the uid when absent, null or empty. A null one
+		// must not be propagated: Grafana would resolve it to the default
+		// datasource and render the wrong data, which is worse than an empty pane.
+		queries := make([]map[string]interface{}, 0, len(args.Queries))
+		for _, q := range args.Queries {
+			enriched := make(map[string]interface{}, len(q)+1)
+			for k, v := range q {
+				enriched[k] = v
+			}
+			if v, ok := enriched["datasource"]; !ok || v == nil || v == "" {
+				enriched["datasource"] = map[string]string{"uid": *args.DatasourceUID}
+			}
+			queries = append(queries, enriched)
+		}
+		pane["queries"] = queries
+	}
+	if timeRange := exploreTimeRange(args.TimeRange); timeRange != nil {
+		pane["range"] = timeRange
+	}
+
+	panesJSON, err := json.Marshal(map[string]interface{}{explorePaneID: pane})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal explore panes: %w", err)
+	}
+
+	params := url.Values{}
+	params.Set("schemaVersion", exploreSchemaVersion)
+	params.Set("panes", string(panesJSON))
+	return params, nil
+}
+
+// buildExploreLeftParams builds Explore URL state in the pre-10.2 `left`
+// format, where datasource, queries, and range share a single JSON object.
+func buildExploreLeftParams(args GenerateDeeplinkParams) (url.Values, error) {
+	exploreState := map[string]interface{}{
+		"datasource": *args.DatasourceUID,
+	}
+	if len(args.Queries) > 0 {
+		exploreState["queries"] = args.Queries
+	}
+	if timeRange := exploreTimeRange(args.TimeRange); timeRange != nil {
+		exploreState["range"] = timeRange
+	}
+
+	leftJSON, err := json.Marshal(exploreState)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal explore state: %w", err)
+	}
+
+	params := url.Values{}
+	params.Set("left", string(leftJSON))
+	return params, nil
+}
+
+func exploreTimeRange(tr *TimeRange) map[string]string {
+	if tr == nil {
+		return nil
+	}
+	rangeObj := map[string]string{}
+	if tr.From != "" {
+		rangeObj["from"] = toGrafanaTimeParam(tr.From)
+	}
+	if tr.To != "" {
+		rangeObj["to"] = toGrafanaTimeParam(tr.To)
+	}
+	if len(rangeObj) == 0 {
+		return nil
+	}
+	return rangeObj
+}
+
+// toGrafanaTimeParam converts a time value to a format Grafana understands
+// in URL query parameters. Grafana's Scenes parseUrlParam uses hardcoded
+// string length checks and only recognizes ISO 8601 at exactly 24 chars
+// (with milliseconds, e.g. "2026-04-28T12:45:00.000Z"). Shorter ISO 8601
+// strings like "2026-04-28T12:45:00Z" (20 chars) are silently ignored.
+// This function converts RFC 3339 timestamps to epoch milliseconds, which
+// is universally supported. Relative strings and epoch values pass through.
+func toGrafanaTimeParam(value string) string {
+	if _, err := strconv.ParseInt(value, 10, 64); err == nil {
+		return value
+	}
+	if strings.HasPrefix(value, "now") {
+		return value
+	}
+	if t, err := time.Parse(time.RFC3339, value); err == nil {
+		return strconv.FormatInt(t.UnixMilli(), 10)
+	}
+	if t, err := time.Parse(time.RFC3339Nano, value); err == nil {
+		return strconv.FormatInt(t.UnixMilli(), 10)
+	}
+	return value
+}

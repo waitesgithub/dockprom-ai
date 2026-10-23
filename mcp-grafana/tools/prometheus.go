@@ -1,0 +1,755 @@
+package tools
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"math"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/grafana/grafana-plugin-sdk-go/backend/gtime"
+	mcpgrafana "github.com/grafana/mcp-grafana/v2"
+	"github.com/invopop/jsonschema"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
+)
+
+var (
+	matchTypeMap = map[string]labels.MatchType{
+		"":   labels.MatchEqual,
+		"=":  labels.MatchEqual,
+		"!=": labels.MatchNotEqual,
+		"=~": labels.MatchRegexp,
+		"!~": labels.MatchNotRegexp,
+	}
+)
+
+type ListPrometheusMetricMetadataParams struct {
+	DatasourceUID  string `json:"datasourceUid" jsonschema:"required,description=The UID of the datasource to query"`
+	Limit          int    `json:"limit" jsonschema:"default=10,description=The maximum number of metrics to return"`
+	LimitPerMetric int    `json:"limitPerMetric" jsonschema:"description=The maximum number of metrics to return per metric"`
+	Metric         string `json:"metric" jsonschema:"description=The metric to query"`
+	ProjectName    string `json:"projectName,omitempty" jsonschema:"description=GCP project name to query (Cloud Monitoring datasources only). Overrides or substitutes the defaultProject configured on the datasource."`
+}
+
+func listPrometheusMetricMetadata(ctx context.Context, args ListPrometheusMetricMetadataParams) (map[string][]promv1.Metadata, error) {
+	backend, err := backendForDatasource(ctx, args.DatasourceUID, args.ProjectName)
+	if err != nil {
+		return nil, fmt.Errorf("getting backend: %w", err)
+	}
+
+	limit := args.Limit
+	if limit == 0 {
+		limit = 10
+	}
+
+	metadata, err := backend.MetricMetadata(ctx, args.Metric, limit)
+	if err != nil {
+		return nil, fmt.Errorf("listing Prometheus metric metadata: %w", err)
+	}
+	return metadata, nil
+}
+
+var ListPrometheusMetricMetadata = mcpgrafana.MustTool(
+	"list_prometheus_metric_metadata",
+	"List Prometheus metric metadata. Returns metadata about metrics currently scraped from targets. Note: This endpoint is experimental.",
+	listPrometheusMetricMetadata,
+	mcpgrafana.WithTitleAnnotation("List Prometheus metric metadata"),
+	mcpgrafana.WithIdempotentHintAnnotation(true),
+	mcpgrafana.WithReadOnlyHintAnnotation(true),
+	mcpgrafana.WithDestructiveHintAnnotation(false),
+	mcpgrafana.WithOpenWorldHintAnnotation(false),
+	mcpgrafana.RequiresPermissions(datasourceQuery...),
+)
+
+type QueryPrometheusParams struct {
+	DatasourceUID string `json:"datasourceUid" jsonschema:"required,description=The UID of the datasource to query"`
+	Expr          string `json:"expr" jsonschema:"required,description=The PromQL expression to query"`
+	StartTime     string `json:"startTime,omitempty" jsonschema:"description=The start time. Required if queryType is 'range'\\, ignored if queryType is 'instant' Supported formats are RFC3339 or relative to now (e.g. 'now'\\, 'now-1.5h'\\, 'now-2h45m'). Valid time units are 'ns'\\, 'us' (or 'µs')\\, 'ms'\\, 's'\\, 'm'\\, 'h'\\, 'd'."`
+	EndTime       string `json:"endTime" jsonschema:"required,description=The end time. Supported formats are RFC3339 or relative to now (e.g. 'now'\\, 'now-1.5h'\\, 'now-2h45m'). Valid time units are 'ns'\\, 'us' (or 'µs')\\, 'ms'\\, 's'\\, 'm'\\, 'h'\\, 'd'."`
+	StepSeconds   int    `json:"stepSeconds,omitempty" jsonschema:"description=The time series step size in seconds. Required if queryType is 'range'\\, ignored if queryType is 'instant'"`
+	QueryType     string `json:"queryType,omitempty" jsonschema:"description=The type of query to use. Either 'range' or 'instant'"`
+	ProjectName   string `json:"projectName,omitempty" jsonschema:"description=GCP project name to query (Cloud Monitoring datasources only). Overrides or substitutes the defaultProject configured on the datasource."`
+}
+
+// QueryPrometheusResult wraps the Prometheus query result with optional hints
+type QueryPrometheusResult struct {
+	Data     model.Value       `json:"data"`
+	Hints    *EmptyResultHints `json:"hints,omitempty"`
+	Warnings []string          `json:"warnings,omitempty"`
+	// ExploreURL opens this query in Grafana Explore. Populated best-effort from
+	// the instance's public URL; omitted when it cannot be resolved.
+	ExploreURL string `json:"exploreUrl,omitempty"`
+}
+
+func parseTime(timeStr string) (time.Time, error) {
+	tr := gtime.TimeRange{
+		From: timeStr,
+		Now:  time.Now(),
+	}
+	return tr.ParseFrom()
+}
+
+// isPrometheusResultEmpty checks if a Prometheus query result contains no data
+func isPrometheusResultEmpty(result model.Value) bool {
+	if result == nil {
+		return true
+	}
+	switch v := result.(type) {
+	case model.Vector:
+		return len(v) == 0
+	case model.Matrix:
+		return len(v) == 0
+	case *model.Scalar:
+		return v == nil // Scalars are never "empty" if they exist
+	case *model.String:
+		return v == nil || v.Value == ""
+	default:
+		return false
+	}
+}
+
+// queryPrometheus executes a PromQL query and returns raw results.
+// This is the internal function - use queryPrometheusWithHints for MCP tools.
+func queryPrometheus(ctx context.Context, args QueryPrometheusParams) (model.Value, error) {
+	result, _, err := queryPrometheusWithWarnings(ctx, args)
+	return result, err
+}
+
+// queryPrometheusWithWarnings is like queryPrometheus but also returns any
+// warnings the datasource reported, such as partial responses from Thanos.
+func queryPrometheusWithWarnings(ctx context.Context, args QueryPrometheusParams) (model.Value, promv1.Warnings, error) {
+	if strings.TrimSpace(args.EndTime) == "" {
+		return nil, nil, fmt.Errorf("endTime is required")
+	}
+
+	queryType := args.QueryType
+	if queryType == "" {
+		queryType = "range"
+	}
+
+	endTime, err := parseTime(args.EndTime)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parsing end time: %w", err)
+	}
+
+	var startTime time.Time
+
+	if queryType == "range" {
+		if args.StepSeconds == 0 {
+			return nil, nil, fmt.Errorf("stepSeconds must be provided when queryType is 'range'")
+		}
+		if strings.TrimSpace(args.StartTime) == "" {
+			return nil, nil, fmt.Errorf("startTime must be provided when queryType is 'range'")
+		}
+		startTime, err = parseTime(args.StartTime)
+		if err != nil {
+			return nil, nil, fmt.Errorf("parsing start time: %w", err)
+		}
+	}
+
+	backend, err := backendForDatasource(ctx, args.DatasourceUID, args.ProjectName)
+	if err != nil {
+		return nil, nil, fmt.Errorf("getting backend: %w", err)
+	}
+
+	return backend.Query(ctx, args.Expr, queryType, startTime, endTime, args.StepSeconds)
+}
+
+// queryPrometheusWithHints wraps queryPrometheus and adds hints for empty results.
+// This is the MCP tool handler - hints are added at this layer, not in the internal function.
+func queryPrometheusWithHints(ctx context.Context, args QueryPrometheusParams) (*QueryPrometheusResult, error) {
+	result, warnings, err := queryPrometheusWithWarnings(ctx, args)
+	if err != nil {
+		return nil, err
+	}
+
+	response := &QueryPrometheusResult{
+		Data:     result,
+		Warnings: warnings,
+	}
+
+	// Add hints if the result is empty
+	if isPrometheusResultEmpty(result) {
+		startTime, _ := parseTime(args.StartTime)
+		endTime, _ := parseTime(args.EndTime)
+		response.Hints = GenerateEmptyResultHints(HintContext{
+			DatasourceType: "prometheus",
+			Query:          args.Expr,
+			StartTime:      startTime,
+			EndTime:        endTime,
+		})
+	}
+
+	return response, nil
+}
+
+// exploreURLForQuery builds an Explore deeplink for a PromQL query, reusing the
+// navigation tool's generator so the URL state matches the target Grafana
+// version (`panes` on 10.2+, legacy `left` below that).
+func exploreURLForQuery(ctx context.Context, args QueryPrometheusParams) string {
+	if args.DatasourceUID == "" || args.Expr == "" {
+		return ""
+	}
+	query := map[string]any{"refId": "A", "expr": args.Expr}
+	if args.QueryType == "instant" {
+		query["instant"] = true
+	} else {
+		query["range"] = true
+		// Explore otherwise picks its own step, and shows different points from
+		// the result the app drew. `interval` is the query's min step.
+		if args.StepSeconds > 0 {
+			query["interval"] = fmt.Sprintf("%ds", args.StepSeconds)
+		}
+	}
+	uid := args.DatasourceUID
+	params := GenerateDeeplinkParams{
+		ResourceType:  "explore",
+		DatasourceUID: &uid,
+		Queries:       []map[string]any{query},
+		TimeRange:     exploreTimeRangeForQuery(args),
+	}
+	url, err := generateDeeplinkReadOnly(ctx, params)
+	if err != nil {
+		// A missing public URL is normal on some deployments; the app simply
+		// omits its "Open in Grafana" action.
+		return ""
+	}
+	return url
+}
+
+// instantExploreWindow is how far back an instant query's Explore link starts.
+// Explore needs a complete range, and an instant query only has its end; an
+// hour matches Explore's own default.
+const instantExploreWindow = time.Hour
+
+// exploreTimeRangeForQuery returns the Explore time range for a query, or nil
+// when it ran over the default range. Instant queries ignore startTime, so
+// their range ends at the instant evaluated, in absolute time on both ends: a
+// relative end would drift away from the start computed here.
+func exploreTimeRangeForQuery(args QueryPrometheusParams) *TimeRange {
+	if args.QueryType != "instant" {
+		if args.StartTime == "" && args.EndTime == "" {
+			return nil
+		}
+		return &TimeRange{From: args.StartTime, To: args.EndTime}
+	}
+	if args.EndTime == "" {
+		return nil
+	}
+	end, err := parseTime(args.EndTime)
+	if err != nil {
+		return nil
+	}
+	return &TimeRange{
+		From: end.Add(-instantExploreWindow).UTC().Format(time.RFC3339),
+		To:   end.UTC().Format(time.RFC3339),
+	}
+}
+
+// maxMetricsViewBytes bounds the payload handed to the metrics app, matching the
+// trace viewer's budget. Past it the tool keeps its text output and no
+// interactive view, rather than handing a host something it cannot render.
+const maxMetricsViewBytes = 1 << 20
+
+// queryPrometheusForApp runs the query and returns the normal text result,
+// enriched with an interactive view when one is possible.
+func queryPrometheusForApp(ctx context.Context, args QueryPrometheusParams) (*mcp.CallToolResult, error) {
+	result, err := queryPrometheusWithHints(ctx, args)
+	if err != nil {
+		return nil, err
+	}
+	result.ExploreURL = exploreURLForQuery(ctx, args)
+	return newMetricsAppResult(result)
+}
+
+// newMetricsAppResult builds the tool result: the JSON payload as a text block —
+// what the model reads, and what a host without MCP Apps support falls back to —
+// then, within the view budget, the same payload as structured content for the
+// app. The tool definition's _meta.ui.resourceUri is what tells the host to
+// render it.
+//
+// Separate from the query so the shape is testable without a Grafana.
+func newMetricsAppResult(result *QueryPrometheusResult) (*mcp.CallToolResult, error) {
+	body, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal Prometheus query result: %w", err)
+	}
+	raw := mcpgrafana.NewToolResultText(string(body))
+	if len(body) <= maxMetricsViewBytes {
+		raw.StructuredContent = result
+	}
+	return raw, nil
+}
+
+var QueryPrometheus = mcpgrafana.MustTool(
+	"query_prometheus",
+	"Query a PromQL-compatible datasource (Prometheus, Thanos, Mimir, Cloud Monitoring, etc.) using a PromQL expression. Supports instant queries (single point) and range queries (time range). Time: RFC3339 or relative expressions like 'now', 'now-1h'.",
+	queryPrometheusForApp,
+	mcpgrafana.WithUIResource(mcpgrafana.MetricsViewerResourceURI),
+	mcpgrafana.WithTitleAnnotation("Query Prometheus metrics"),
+	mcpgrafana.WithIdempotentHintAnnotation(true),
+	mcpgrafana.WithReadOnlyHintAnnotation(true),
+	mcpgrafana.WithDestructiveHintAnnotation(false),
+	mcpgrafana.WithOpenWorldHintAnnotation(false),
+	mcpgrafana.RequiresPermissions(datasourceQuery...),
+)
+
+const maxPrometheusMetricNames = 10_000
+
+type ListPrometheusMetricNamesParams struct {
+	DatasourceUID string `json:"datasourceUid" jsonschema:"required,description=The UID of the datasource to query"`
+	Regex         string `json:"regex" jsonschema:"description=The regex to match against the metric names"`
+	Limit         int    `json:"limit,omitempty" jsonschema:"default=10,description=The maximum number of results to return"`
+	Page          int    `json:"page,omitempty" jsonschema:"default=1,description=The page number to return"`
+	StartRFC3339  string `json:"startRfc3339,omitempty" jsonschema:"description=Optionally\\, the start time of the time range to filter the results by. Supports RFC3339 or relative time (e.g. 'now-1h')"`
+	EndRFC3339    string `json:"endRfc3339,omitempty" jsonschema:"description=Optionally\\, the end time of the time range to filter the results by. Supports RFC3339 or relative time (e.g. 'now')"`
+	ProjectName   string `json:"projectName,omitempty" jsonschema:"description=GCP project name to query (Cloud Monitoring datasources only). Overrides or substitutes the defaultProject configured on the datasource."`
+}
+
+func listPrometheusMetricNames(ctx context.Context, args ListPrometheusMetricNamesParams) ([]string, error) {
+	limit := args.Limit
+	if limit == 0 {
+		limit = 10
+	}
+	page := args.Page
+	if page == 0 {
+		page = 1
+	}
+	if limit < 1 || page < 1 {
+		return nil, fmt.Errorf("limit and page must be positive")
+	}
+	// Prometheus has no offset parameter, so later pages require fetching earlier names too.
+	if page > maxPrometheusMetricNames/limit {
+		return nil, fmt.Errorf("page * limit must not exceed %d; reduce page or limit", maxPrometheusMetricNames)
+	}
+
+	var re *regexp.Regexp
+	if args.Regex != "" {
+		var err error
+		re, err = regexp.Compile(args.Regex)
+		if err != nil {
+			return nil, fmt.Errorf("compiling regex: %w", err)
+		}
+	}
+
+	startTime, err := parseStartTime(args.StartRFC3339)
+	if err != nil {
+		return nil, fmt.Errorf("parsing start time: %w", err)
+	}
+	endTime, err := parseEndTime(args.EndRFC3339)
+	if err != nil {
+		return nil, fmt.Errorf("parsing end time: %w", err)
+	}
+
+	backend, err := backendForDatasource(ctx, args.DatasourceUID, args.ProjectName)
+	if err != nil {
+		return nil, fmt.Errorf("getting backend: %w", err)
+	}
+	end := page * limit
+	matches, err := backend.MetricNames(ctx, re, end, startTime, endTime)
+	if err != nil {
+		return nil, fmt.Errorf("listing Prometheus metric names: %w", err)
+	}
+
+	start := end - limit
+	if start >= len(matches) {
+		return []string{}, nil
+	}
+	return matches[start:min(end, len(matches))], nil
+}
+
+var ListPrometheusMetricNames = mcpgrafana.MustTool(
+	"list_prometheus_metric_names",
+	"Lists metric names in a PromQL-compatible datasource (Prometheus, Thanos, Mimir, Cloud Monitoring, etc.). Filters metric names using the provided regex. Supports pagination (page * limit must not exceed 10000) and an optional time range to restrict results to metrics active within that window. Cloud Monitoring ignores the time range.",
+	listPrometheusMetricNames,
+	mcpgrafana.WithTitleAnnotation("List Prometheus metric names"),
+	mcpgrafana.WithIdempotentHintAnnotation(true),
+	mcpgrafana.WithReadOnlyHintAnnotation(true),
+	mcpgrafana.WithDestructiveHintAnnotation(false),
+	mcpgrafana.WithOpenWorldHintAnnotation(false),
+	mcpgrafana.RequiresPermissions(datasourceQuery...),
+)
+
+type LabelMatcher struct {
+	Name  string `json:"name" jsonschema:"required,description=The name of the label to match against"`
+	Value string `json:"value" jsonschema:"required,description=The value to match against"`
+	Type  string `json:"type" jsonschema:"required,description=One of the '=' or '!=' or '=~' or '!~'"`
+}
+
+type Selector struct {
+	Filters []LabelMatcher `json:"filters"`
+}
+
+// JSONSchemaExtend advertises the selector string form accepted by UnmarshalJSON
+// alongside the reflected filters object.
+func (Selector) JSONSchemaExtend(schema *jsonschema.Schema) {
+	object := *schema
+	*schema = jsonschema.Schema{
+		OneOf: []*jsonschema.Schema{
+			{Type: "string", Description: `A Prometheus selector such as {job="api"}`},
+			&object,
+		},
+	}
+}
+
+// UnmarshalJSON also accepts a Prometheus selector string such as '{job="api"}',
+// the form LLM callers commonly send instead of the filters object.
+func (s *Selector) UnmarshalJSON(data []byte) error {
+	if len(data) > 0 && data[0] == '"' {
+		var selector string
+		if err := json.Unmarshal(data, &selector); err != nil {
+			return err
+		}
+		parsed, err := parseSelectorStrings([]string{selector})
+		if err != nil {
+			return err
+		}
+		*s = parsed[0]
+		return nil
+	}
+
+	type plainSelector Selector
+	return json.Unmarshal(data, (*plainSelector)(s))
+}
+
+func (s Selector) String() string {
+	b := strings.Builder{}
+	b.WriteRune('{')
+	for i, f := range s.Filters {
+		if matchType, ok := matchTypeMap[f.Type]; ok {
+			m := labels.Matcher{Type: matchType, Name: f.Name, Value: f.Value}
+			b.WriteString(m.String())
+		} else {
+			fmt.Fprintf(&b, "%s%s%s", f.Name, f.Type, strconv.Quote(f.Value))
+		}
+		if i < len(s.Filters)-1 {
+			b.WriteString(", ")
+		}
+	}
+	b.WriteRune('}')
+	return b.String()
+}
+
+// selectorMatchers renders selectors as match[] values. Empty selectors (often ""
+// from LLMs) filter nothing and Prometheus rejects match[]={}, so they are skipped.
+func selectorMatchers(selectors []Selector) []string {
+	var matchers []string
+	for _, s := range selectors {
+		if len(s.Filters) == 0 {
+			continue
+		}
+		matchers = append(matchers, s.String())
+	}
+	return matchers
+}
+
+// Matches runs the matchers against the given labels and returns whether they match the selector.
+func (s Selector) Matches(lbls labels.Labels) (bool, error) {
+	matchers := make(labels.Selector, 0, len(s.Filters))
+
+	for _, filter := range s.Filters {
+		matchType, ok := matchTypeMap[filter.Type]
+		if !ok {
+			return false, fmt.Errorf("invalid matcher type: %s", filter.Type)
+		}
+
+		matcher, err := labels.NewMatcher(matchType, filter.Name, filter.Value)
+		if err != nil {
+			return false, fmt.Errorf("creating matcher: %w", err)
+		}
+
+		matchers = append(matchers, matcher)
+	}
+
+	return matchers.Matches(lbls), nil
+}
+
+type ListPrometheusLabelNamesParams struct {
+	DatasourceUID string     `json:"datasourceUid" jsonschema:"required,description=The UID of the datasource to query"`
+	Matches       []Selector `json:"matches,omitempty" jsonschema:"description=Optionally\\, a list of label matchers to filter the results by"`
+	StartRFC3339  string     `json:"startRfc3339,omitempty" jsonschema:"description=Optionally\\, the start time of the time range to filter the results by. Supports RFC3339 or relative time (e.g. 'now-1h')"`
+	EndRFC3339    string     `json:"endRfc3339,omitempty" jsonschema:"description=Optionally\\, the end time of the time range to filter the results by. Supports RFC3339 or relative time (e.g. 'now')"`
+	Limit         int        `json:"limit,omitempty" jsonschema:"default=100,description=Optionally\\, the maximum number of results to return"`
+	ProjectName   string     `json:"projectName,omitempty" jsonschema:"description=GCP project name to query (Cloud Monitoring datasources only). Overrides or substitutes the defaultProject configured on the datasource."`
+}
+
+func listPrometheusLabelNames(ctx context.Context, args ListPrometheusLabelNamesParams) ([]string, error) {
+	backend, err := backendForDatasource(ctx, args.DatasourceUID, args.ProjectName)
+	if err != nil {
+		return nil, fmt.Errorf("getting backend: %w", err)
+	}
+
+	limit := args.Limit
+	if limit == 0 {
+		limit = 100
+	}
+
+	startTime, err := parseStartTime(args.StartRFC3339)
+	if err != nil {
+		return nil, fmt.Errorf("parsing start time: %w", err)
+	}
+	endTime, err := parseEndTime(args.EndRFC3339)
+	if err != nil {
+		return nil, fmt.Errorf("parsing end time: %w", err)
+	}
+
+	matchers := selectorMatchers(args.Matches)
+
+	labelNames, err := backend.LabelNames(ctx, matchers, startTime, endTime)
+	if err != nil {
+		return nil, fmt.Errorf("listing Prometheus label names: %w", err)
+	}
+
+	// Apply limit
+	if len(labelNames) > limit {
+		labelNames = labelNames[:limit]
+	}
+
+	return labelNames, nil
+}
+
+var ListPrometheusLabelNames = mcpgrafana.MustTool(
+	"list_prometheus_label_names",
+	"List label names in a PromQL-compatible datasource (Prometheus, Thanos, Mimir, Cloud Monitoring, etc.). Allows filtering by series selectors and time range.",
+	listPrometheusLabelNames,
+	mcpgrafana.WithTitleAnnotation("List Prometheus label names"),
+	mcpgrafana.WithIdempotentHintAnnotation(true),
+	mcpgrafana.WithReadOnlyHintAnnotation(true),
+	mcpgrafana.WithDestructiveHintAnnotation(false),
+	mcpgrafana.WithOpenWorldHintAnnotation(false),
+	mcpgrafana.RequiresPermissions(datasourceQuery...),
+)
+
+type ListPrometheusLabelValuesParams struct {
+	DatasourceUID string     `json:"datasourceUid" jsonschema:"required,description=The UID of the datasource to query"`
+	LabelName     string     `json:"labelName" jsonschema:"required,description=The name of the label to query"`
+	Matches       []Selector `json:"matches,omitempty" jsonschema:"description=Optionally\\, a list of selectors to filter the results by"`
+	StartRFC3339  string     `json:"startRfc3339,omitempty" jsonschema:"description=Optionally\\, the start time of the query. Supports RFC3339 or relative time (e.g. 'now-1h')"`
+	EndRFC3339    string     `json:"endRfc3339,omitempty" jsonschema:"description=Optionally\\, the end time of the query. Supports RFC3339 or relative time (e.g. 'now')"`
+	Limit         int        `json:"limit,omitempty" jsonschema:"default=100,description=Optionally\\, the maximum number of results to return"`
+	ProjectName   string     `json:"projectName,omitempty" jsonschema:"description=GCP project name to query (Cloud Monitoring datasources only). Overrides or substitutes the defaultProject configured on the datasource."`
+}
+
+func listPrometheusLabelValues(ctx context.Context, args ListPrometheusLabelValuesParams) ([]string, error) {
+	backend, err := backendForDatasource(ctx, args.DatasourceUID, args.ProjectName)
+	if err != nil {
+		return nil, fmt.Errorf("getting backend: %w", err)
+	}
+
+	limit := args.Limit
+	if limit == 0 {
+		limit = 100
+	}
+
+	startTime, err := parseStartTime(args.StartRFC3339)
+	if err != nil {
+		return nil, fmt.Errorf("parsing start time: %w", err)
+	}
+	endTime, err := parseEndTime(args.EndRFC3339)
+	if err != nil {
+		return nil, fmt.Errorf("parsing end time: %w", err)
+	}
+
+	matchers := selectorMatchers(args.Matches)
+
+	values, err := backend.LabelValues(ctx, args.LabelName, matchers, startTime, endTime)
+	if err != nil {
+		return nil, fmt.Errorf("listing Prometheus label values: %w", err)
+	}
+
+	// Apply limit
+	if len(values) > limit {
+		values = values[:limit]
+	}
+
+	return values, nil
+}
+
+var ListPrometheusLabelValues = mcpgrafana.MustTool(
+	"list_prometheus_label_values",
+	"Gets the values for a specific label name in a PromQL-compatible datasource (Prometheus, Thanos, Mimir, Cloud Monitoring, etc.). Allows filtering by series selectors and time range.",
+	listPrometheusLabelValues,
+	mcpgrafana.WithTitleAnnotation("List Prometheus label values"),
+	mcpgrafana.WithIdempotentHintAnnotation(true),
+	mcpgrafana.WithReadOnlyHintAnnotation(true),
+	mcpgrafana.WithDestructiveHintAnnotation(false),
+	mcpgrafana.WithOpenWorldHintAnnotation(false),
+	mcpgrafana.RequiresPermissions(datasourceQuery...),
+)
+
+// PrometheusHistogramResult wraps histogram query results with debugging info
+type PrometheusHistogramResult struct {
+	Result model.Value `json:"result"`
+	Query  string      `json:"query"` // Generated PromQL for debugging
+	Hints  []string    `json:"hints,omitempty"`
+}
+
+// QueryPrometheusHistogramParams defines the parameters for querying histogram percentiles
+type QueryPrometheusHistogramParams struct {
+	DatasourceUID string  `json:"datasourceUid" jsonschema:"required,description=The UID of the Prometheus datasource"`
+	Metric        string  `json:"metric" jsonschema:"required,description=Base histogram metric name (without _bucket suffix)"`
+	Percentile    float64 `json:"percentile" jsonschema:"required,description=Percentile to calculate (e.g. 50\\, 90\\, 95\\, 99)"`
+	Labels        string  `json:"labels,omitempty" jsonschema:"description=Label selector (e.g. job=\"api\"\\, service=\"gateway\")"`
+	RateInterval  string  `json:"rateInterval,omitempty" jsonschema:"description=Rate interval for the query (default: 5m)"`
+	StartTime     string  `json:"startTime,omitempty" jsonschema:"description=Start time (default: now-1h). Supports RFC3339\\, relative (now-1h)\\, or Unix ms."`
+	EndTime       string  `json:"endTime,omitempty" jsonschema:"description=End time (default: now). Supports RFC3339\\, relative\\, or Unix ms."`
+	StepSeconds   int     `json:"stepSeconds,omitempty" jsonschema:"description=Step size in seconds for range query (default: 60)"`
+	ProjectName   string  `json:"projectName,omitempty" jsonschema:"description=GCP project name to query (Cloud Monitoring datasources only). Overrides or substitutes the defaultProject configured on the datasource."`
+}
+
+// queryPrometheusHistogram generates and executes a histogram percentile query
+func queryPrometheusHistogram(ctx context.Context, args QueryPrometheusHistogramParams) (*PrometheusHistogramResult, error) {
+	// Set defaults
+	rateInterval := args.RateInterval
+	if rateInterval == "" {
+		rateInterval = "5m"
+	}
+
+	startTime := args.StartTime
+	if startTime == "" {
+		startTime = "now-1h"
+	}
+
+	endTime := args.EndTime
+	if endTime == "" {
+		endTime = "now"
+	}
+
+	stepSeconds := args.StepSeconds
+	if stepSeconds == 0 {
+		stepSeconds = 60
+	}
+
+	// Validate percentile is in valid range
+	if args.Percentile < 0 || args.Percentile > 100 {
+		return nil, fmt.Errorf("percentile must be between 0 and 100, got %g", args.Percentile)
+	}
+
+	// Convert percentile to quantile (e.g., 95 -> 0.95)
+	quantile := args.Percentile / 100.0
+
+	// Build the label selector
+	labelSelector := ""
+	if args.Labels != "" {
+		labelSelector = args.Labels
+	}
+
+	// Build the PromQL expression for histogram_quantile
+	var expr string
+	if labelSelector != "" {
+		expr = fmt.Sprintf(
+			"histogram_quantile(%g, sum(rate(%s_bucket{%s}[%s])) by (le))",
+			quantile, args.Metric, labelSelector, rateInterval,
+		)
+	} else {
+		expr = fmt.Sprintf(
+			"histogram_quantile(%g, sum(rate(%s_bucket[%s])) by (le))",
+			quantile, args.Metric, rateInterval,
+		)
+	}
+
+	// Execute the query using the existing queryPrometheus function
+	result, err := queryPrometheus(ctx, QueryPrometheusParams{
+		DatasourceUID: args.DatasourceUID,
+		Expr:          expr,
+		StartTime:     startTime,
+		EndTime:       endTime,
+		StepSeconds:   stepSeconds,
+		QueryType:     "range",
+		ProjectName:   args.ProjectName,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Generate hints if result is empty or contains NaN
+	var hints []string
+	if isPrometheusResultEmptyOrNaN(result) {
+		hints = []string{
+			"No data found or result is NaN. Possible reasons:",
+			"- Histogram metric may not exist - use list_prometheus_metric_names with regex='.*_bucket$'",
+			"- Label selector may not match any series - verify labels with list_prometheus_label_values",
+			"- Time range may have no data - try extending with startTime",
+			"- Metric may not be a histogram (missing _bucket suffix)",
+		}
+	}
+
+	return &PrometheusHistogramResult{
+		Result: result,
+		Query:  expr,
+		Hints:  hints,
+	}, nil
+}
+
+// isPrometheusResultEmptyOrNaN checks if a Prometheus result is empty or contains only NaN values
+func isPrometheusResultEmptyOrNaN(v model.Value) bool {
+	switch val := v.(type) {
+	case model.Matrix:
+		if len(val) == 0 {
+			return true
+		}
+		// Check if all values are NaN
+		allNaN := true
+		for _, ss := range val {
+			for _, sp := range ss.Values {
+				if !math.IsNaN(float64(sp.Value)) {
+					allNaN = false
+					break
+				}
+			}
+			if !allNaN {
+				break
+			}
+		}
+		return allNaN
+	case model.Vector:
+		if len(val) == 0 {
+			return true
+		}
+		// Check if all values are NaN
+		for _, s := range val {
+			if !math.IsNaN(float64(s.Value)) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+// QueryPrometheusHistogram is a tool for querying histogram percentiles
+var QueryPrometheusHistogram = mcpgrafana.MustTool(
+	"query_prometheus_histogram",
+	`Query Prometheus histogram percentiles from classic histogram '_bucket' series.
+
+Generates histogram_quantile PromQL. Example: metric='http_duration', percentile=95, labels='job="api"'
+
+Time formats: 'now-1h', '2026-02-02T19:00:00Z', '1738519200000' (Unix ms)`,
+	queryPrometheusHistogram,
+	mcpgrafana.WithTitleAnnotation("Query Prometheus histogram percentile"),
+	mcpgrafana.WithIdempotentHintAnnotation(true),
+	mcpgrafana.WithReadOnlyHintAnnotation(true),
+	mcpgrafana.WithDestructiveHintAnnotation(false),
+	mcpgrafana.WithOpenWorldHintAnnotation(false),
+	mcpgrafana.RequiresPermissions(datasourceQuery...),
+)
+
+// AddPrometheusTools registers the Prometheus tools on the MCP server. The
+// tools that execute PromQL are registered only when enableQueryTools is true;
+// the metadata tools stay available either way.
+func AddPrometheusTools(s *mcp.Server, enableQueryTools bool) {
+	ListPrometheusMetricMetadata.Register(s)
+	if enableQueryTools {
+		QueryPrometheus.Register(s)
+		QueryPrometheusHistogram.Register(s)
+	}
+	ListPrometheusMetricNames.Register(s)
+	ListPrometheusLabelNames.Register(s)
+	ListPrometheusLabelValues.Register(s)
+}
