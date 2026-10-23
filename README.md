@@ -10,18 +10,17 @@ A comprehensive monitoring solution for Docker hosts and containers with AI-powe
 - **Loki** - Log aggregation
 - **Tempo** - Distributed tracing
 - **OpenTelemetry Collector** - OTLP ingest
-- **cAdvisor** - Container metrics
+- **Logporter** - Container metrics and Docker log shipping to Loki
 - **NodeExporter** - Host metrics
 - **Grafana MCP Server** - AI-powered Grafana integration
-- **Ollama Gateway** - LLM inference with observability
 - **AlertManager** - Alert management
 
 ## Quick Start
 
 ### Prerequisites
 
-- Docker Engine >= 1.13
-- Docker Compose >= 1.11
+- Docker Engine
+- Docker Compose v2.20 or later
 
 ### Installation
 
@@ -30,14 +29,28 @@ Clone this repository and start the monitoring stack:
 ```bash
 git clone https://github.com/waitesgithub/dockprom-ai
 cd dockprom-ai
-
-ADMIN_USER='admin' ADMIN_PASSWORD='admin' ADMIN_PASSWORD_HASH='$2a$14$1l.IozJx7xQRVmlkEQ32OeEEfP5mRxTpbDTCTcXRqn19gXD8YK1pO' docker-compose up -d
 ```
 
-**Note:** Caddy v2 requires passwords as hash values. The above hash corresponds to password 'admin'. To generate a new hash:
+```bash
+docker compose up -d
+```
+
+Grafana defaults to `admin` / `admin`; set `ADMIN_USER` and `ADMIN_PASSWORD`
+to change those credentials. Caddy is optional and disabled by default. To run
+it, generate a password hash and start the `proxy` profile:
 
 ```bash
-docker run --rm caddy caddy hash-password --plaintext 'YOUR_PASSWORD'
+docker run --rm caddy:v2.11.7 caddy hash-password --plaintext 'YOUR_PASSWORD'
+export ADMIN_PASSWORD_HASH='your-generated-hash'
+docker compose --profile proxy up -d
+```
+
+To enable the optional Grafana MCP server, create a Grafana service-account
+token after Grafana starts, then run:
+
+```bash
+export GRAFANA_SERVICE_ACCOUNT_TOKEN='your-service-account-token'
+docker compose --profile mcp up -d mcp-grafana
 ```
 
 ## Services
@@ -54,11 +67,10 @@ The stack includes the following services:
 | **Tempo** | `http://<host-ip>:3200` | Distributed tracing database |
 | **OpenTelemetry Collector** | `http://<host-ip>:4318` (HTTP) | OTLP metrics, logs, and traces ingest |
 | **OpenTelemetry Collector** | `http://<host-ip>:4317` (gRPC) | OTLP ingest |
-| **Ollama Gateway** | `http://<host-ip>:11435` | HTTP proxy with tracing/metrics for Ollama |
 | **NodeExporter** | - | Host metrics collector |
-| **cAdvisor** | - | Container metrics collector |
-| **Alloy** | - | Docker logs collector → Loki |
-| **Caddy** | - | Reverse proxy with basic auth |
+| **Logporter** | `http://127.0.0.1:9333` | Container metrics, Docker logs, and dashboard |
+| **Grafana MCP Server** | `http://127.0.0.1:8000/sse` | Optional local AI client integration (`--profile mcp`) |
+| **Caddy** | `http://<host-ip>` | Optional reverse proxy with basic auth (`--profile proxy`) |
 
 ## AI-Powered Observability with Grafana MCP Server
 
@@ -116,36 +128,11 @@ Dockprom-AI integrates the **Grafana MCP Server**, enabling AI agents (Claude, C
 - **Manage permissions** - View and manage resource permissions
 - **Get user/org info** - Current identity and capabilities
 
-## AI Observability: Ollama + OTEL + Loki + Tempo
+## AI Application Observability
 
-Dockprom-AI extends the stack with a **drop-in observability bundle** for AI/LLM applications:
-
-- **Traces** - Apps send OTLP traces → stored in Tempo → viewed in Grafana
-- **Logs** - Docker logs collected by Alloy → stored in Loki → viewed in Grafana
+- **Traces** - Apps send OTLP traces to the Collector → stored in Tempo → viewed in Grafana
+- **Logs** - Docker logs collected by Logporter → stored in Loki → viewed in Grafana
 - **Metrics** - OTLP metrics sent to OTel Collector → exposed for Prometheus
-- **Ollama Gateway** - Envoy proxy with automatic request tracing and metrics
-
-### Make Host Ollama Reachable
-
-The gateway runs in Docker and forwards to `host.docker.internal:11434`. On Linux, ensure Ollama listens on a non-loopback interface:
-
-```bash
-export OLLAMA_HOST=0.0.0.0:11434
-ollama serve
-```
-
-### Use the Ollama Gateway
-
-Point your applications to:
-
-```
-http://<host-ip>:11435
-```
-
-This automatically provides:
-- **Tempo traces** for each request
-- **Prometheus metrics** for RPS, latency, and errors
-- **Loki logs** for gateway and access logs
 
 ### Instrument Your Application
 
@@ -159,7 +146,7 @@ export OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:4318"
 export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
 ```
 
-**For apps in Docker (same `monitor-net` network):**
+**For apps in Docker (same `monitoring` network):**
 
 ```bash
 OTEL_SERVICE_NAME=my-app
@@ -175,7 +162,7 @@ Navigate to `http://<host-ip>:3000` and login with **admin / admin**.
 
 ```yaml
 grafana:
-  image: grafana/grafana:latest
+  image: grafana/grafana:13.2.4
   env_file:
     - config
 ```
@@ -201,35 +188,19 @@ Additional datasources:
 - **Loki** - `http://loki:3100`
 - **Tempo** - `http://tempo:3200`
 
-### Pre-configured Dashboards
+### Dashboards
 
-**Docker Host Dashboard**
-- Server uptime, CPU, and memory metrics
-- System load, processes, and I/O
-- CPU usage by mode
-- Memory and storage usage
-- Network metrics by device
-- Swap usage and activity
-
-**Docker Containers Dashboard**
-- Total containers CPU, memory, and storage
-- Running containers and system load
-- Container CPU usage
-- Container memory usage
-- Container network I/O
-
-**Monitor Services Dashboard**
-- Prometheus uptime and storage metrics
-- Prometheus ingestion rate and scrape metrics
-- Alert tracking and performance graphs
+The Logporter dashboard is available at `http://127.0.0.1:9333`. To provision
+additional Grafana dashboards, place their exported JSON files in `screens/`;
+Grafana watches that directory through its configured dashboard provider.
 
 ## Define Alerts
 
-Three alert groups are configured in [prometheus/alert.rules](prometheus/alert.rules):
+The initial target health alert is configured in [prometheus/alert.rules](prometheus/alert.rules):
 
 ### Monitoring Services Alerts
 
-Alert if monitoring targets (node-exporter, cAdvisor) are down:
+Alert if a Prometheus monitoring target, including node-exporter or Logporter, is down:
 
 ```yaml
 - alert: monitor_service_down
@@ -285,44 +256,9 @@ High storage usage:
 
 ### Docker Containers Alerts
 
-Container down:
-
-```yaml
-- alert: container_down
-  expr: absent(container_memory_usage_bytes{name="service-name"})
-  for: 30s
-  labels:
-    severity: critical
-  annotations:
-    summary: "Container down"
-    description: "Container is down for more than 30 seconds."
-```
-
-Container high CPU:
-
-```yaml
-- alert: container_high_cpu
-  expr: sum(rate(container_cpu_usage_seconds_total{name="service"}[1m])) / count(node_cpu_seconds_total{mode="system"}) * 100 > 10
-  for: 30s
-  labels:
-    severity: warning
-  annotations:
-    summary: "Container high CPU"
-    description: "Container CPU usage: {{ humanize $value }}%"
-```
-
-Container high memory:
-
-```yaml
-- alert: container_high_memory
-  expr: sum(container_memory_usage_bytes{name="service"}) > 1200000000
-  for: 30s
-  labels:
-    severity: warning
-  annotations:
-    summary: "Container high memory"
-    description: "Container memory consumption: {{ humanize $value }}"
-```
+Container alert expressions should use the metric names and labels exposed by
+Logporter at `http://127.0.0.1:9333/metrics`. Existing cAdvisor expressions
+such as `container_memory_usage_bytes` may need to be translated before use.
 
 ## Setup Alerting
 
@@ -372,6 +308,14 @@ echo "some_metric 3.14" | curl --data-binary @- http://user:password@localhost:9
 Replace `user:password` with your admin credentials.
 
 ## Grafana MCP Server Configuration
+
+The Compose stack starts the official Grafana MCP server in SSE
+mode. Create a service account token in Grafana, export it as
+`GRAFANA_SERVICE_ACCOUNT_TOKEN`, and configure your MCP client to connect to
+`http://localhost:8000/sse`. Keep the token private and grant only the
+permissions needed by the client. The service is bound to localhost and is not
+published to external interfaces. Start it with
+`docker compose --profile mcp up -d mcp-grafana`.
 
 ### Quick Start with Claude Desktop
 
@@ -436,6 +380,51 @@ global.users:* (users:read)
 ```
 
 For more details, see the [Grafana RBAC documentation](https://grafana.com/docs/grafana/latest/administration/roles-and-permissions/access-control/).
+
+## Image versions and upgrade notes
+
+The Compose file pins the requested upstream releases:
+
+| Service | Image |
+|---------|-------|
+| Prometheus | `prom/prometheus:v3.15.1` |
+| Grafana | `grafana/grafana:13.2.4` |
+| Caddy | `caddy:v2.11.7` |
+| Alertmanager | `prom/alertmanager:0.34.1` |
+| Node Exporter | `prom/node-exporter:v1.12.1` |
+| Pushgateway | `prom/pushgateway:v1.11.4` |
+| Loki | `grafana/loki:2.9.3` |
+| Logporter | `lifailon/logporter:latest` |
+
+Grafana 13.2.4 is a major-version upgrade from Grafana 12.4.0. Back up the
+`grafana-data` volume before upgrading and test your existing dashboards in a
+staging instance. Grafana may migrate dashboard models or panel layouts on
+first startup; keep exported dashboard JSON backups and check panels, variables,
+and queries after the migration. Restore the volume backup to roll back rather
+than downgrading Grafana against an already-migrated database.
+
+Logporter replaces cAdvisor and collects both container metrics and Docker
+logs, so a separate container-metrics agent and Docker log collector are not
+needed for those functions. Combining these functions can reduce the number
+of running services; actual resource use depends on workload, so measure it
+before setting resource limits. The Docker socket is mounted read-only, but
+access to the Docker API is still highly privileged; only run Logporter on a
+trusted host. Its dashboard is available locally at `http://127.0.0.1:9333`;
+dashboard JSON can also be provisioned through the `screens/` directory.
+Existing cAdvisor dashboards and alert expressions may need updates to use
+Logporter's metrics (inspect `http://127.0.0.1:9333/metrics`). Although
+cAdvisor's upstream image moved from `gcr.io/cadvisor/cadvisor` to
+`ghcr.io/google/cadvisor`, this stack removes cAdvisor instead of upgrading
+it.
+
+The Compose stack keeps Loki on 2.9.3 as specified. Tempo, the OpenTelemetry
+Collector, and the MCP server use their upstream `latest` tags because no
+release tags were specified for them here; review and pin those separately if
+you need reproducible upgrades.
+
+The optional Caddy proxy is started with the `proxy` Compose profile and
+requires a Caddy password hash. Grafana's credentials and MCP service-account
+token should be set through environment variables rather than committed config.
 
 ## Troubleshooting
 

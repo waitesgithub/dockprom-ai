@@ -1,0 +1,7 @@
+:80 {
+	basic_auth {
+		{$ADMIN_USER} {$ADMIN_PASSWORD_HASH}
+	}
+
+	reverse_proxy grafana:3000
+}
