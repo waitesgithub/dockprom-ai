@@ -22,6 +22,10 @@ backend_scheduler:
       compaction:
         block_retention: 336h
 
+backend_worker:
+  compaction:
+    block_retention: 336h
+
 storage:
   trace:
     backend: local
