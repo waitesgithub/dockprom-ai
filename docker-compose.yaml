@@ -19,7 +19,7 @@ volumes:
     
 services:
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.15.1 # https://github.com/prometheus/prometheus/releases
     container_name: prometheus
     restart: unless-stopped
     volumes:
@@ -39,7 +39,7 @@ services:
       - monitoring
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:13.2.4 # https://github.com/grafana/grafana/releases
     container_name: grafana
     restart: unless-stopped
     ports:
@@ -50,7 +50,7 @@ services:
       - monitoring
 
   node-exporter:
-    image: prom/node-exporter:latest
+    image: prom/node-exporter:v1.12.1 # https://github.com/prometheus/node_exporter/releases
     container_name: node-exporter
     restart: unless-stopped
     volumes:
@@ -69,7 +69,7 @@ services:
       - monitoring
 
   alertmanager:
-    image: prom/alertmanager:latest
+    image: prom/alertmanager:0.34.1 # https://github.com/prometheus/alertmanager/releases
     container_name: alertmanager
     restart: unless-stopped
     ports: 
@@ -83,7 +83,7 @@ services:
       - monitoring  
 
   tempo:
-    image: grafana/tempo:latest
+    image: grafana/tempo:2.10.0 # https://github.com/grafana/tempo/releases
     container_name: tempo
     restart: unless-stopped
     ports:     
@@ -98,7 +98,7 @@ services:
 
             
   loki:
-    image: grafana/loki:latest
+    image: grafana/loki:2.9.3 # https://github.com/grafana/loki/releases
     container_name: loki
     restart: unless-stopped
     ports:
@@ -111,7 +111,7 @@ services:
       - monitoring    
       
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
+    image: otel/opentelemetry-collector-contrib:0.117.0 # https://github.com/open-telemetry/opentelemetry-collector-releases/releases
     container_name: otel-collector
     restart: unless-stopped
     volumes:
