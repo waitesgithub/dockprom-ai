@@ -32,8 +32,8 @@ All services run on the `monitoring` Docker network.
 | **Grafana** | `grafana/grafana:13.2.4` | 3000 | Dashboards; datasources and dashboards are provisioned |
 | **Node Exporter** | `prom/node-exporter:v1.12.1` | 9100 | Host metrics |
 | **AlertManager** | `prom/alertmanager:v0.34.1` | 9093 | Alert routing and email notifications |
-| **Loki** | `grafana/loki:3.7.8` | 3100 | Log aggregation |
-| **Tempo** | `grafana/tempo:3.1.0` | 3200 | Distributed tracing (HTTP API) |
+| **Loki** | `grafana/loki:3.7.9` | 3100 | Log aggregation |
+| **Tempo** | `grafana/tempo:3.1.1` | 3200 | Distributed tracing (HTTP API) |
 | **OpenTelemetry Collector** | `otel/opentelemetry-collector-contrib:0.163.0` | 4317 (gRPC), 4318 (HTTP) | OTLP ingest |
 | **logporter** | `lifailon/logporter:latest` | 9333 | Docker container metrics for Prometheus; ships container logs to Loki |
 
