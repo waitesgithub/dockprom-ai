@@ -1,0 +1,27 @@
+name: Daily Health Check
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Start stack
+        run: docker compose up -d
+      - name: Health checks
+        run: bash tests/health-checks.sh
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs --tail=100
+      - name: Stop stack
+        if: always()
+        run: docker compose down -v

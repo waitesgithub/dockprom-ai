@@ -1,0 +1,1 @@
+{"resourceLogs":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"integration-test"}}]},"scopeLogs":[{"scope":{"name":"it"},"logRecords":[{"timeUnixNano":"__NOW__","severityText":"INFO","body":{"stringValue":"__MARKER__"}}]}]}]}

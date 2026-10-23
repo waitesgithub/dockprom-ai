@@ -85,6 +85,7 @@ services:
   tempo:
     image: grafana/tempo:latest
     container_name: tempo
+    user: "0:0"   # named volume is root-owned
     restart: unless-stopped
     ports:     
       - "3200:3200"     # Tempo HTTP API 
@@ -100,6 +101,7 @@ services:
   loki:
     image: grafana/loki:latest
     container_name: loki
+    user: "0:0"   # named volume is root-owned
     restart: unless-stopped
     ports:
       - "3100:3100"  # Loki HTTP port

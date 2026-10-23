@@ -1,0 +1,20 @@
+name: Docker Compose Validate
+
+on:
+  push:
+    paths: ['docker-compose.yaml', '*.yml', '*.yaml', 'tests/**']
+  pull_request:
+    paths: ['docker-compose.yaml', '*.yml', '*.yaml', 'tests/**']
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test dependencies
+        run: sudo apt-get update && sudo apt-get install -y jq python3-yaml
+      - run: bash tests/docker-compose-validation.sh
+      - run: bash tests/config-validation.sh

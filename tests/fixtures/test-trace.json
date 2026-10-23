@@ -1,0 +1,1 @@
+{"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"integration-test"}}]},"scopeSpans":[{"scope":{"name":"it"},"spans":[{"traceId":"__TRACE_ID__","spanId":"0102030405060708","name":"integration-test-span","kind":1,"startTimeUnixNano":"__START__","endTimeUnixNano":"__END__"}]}]}]}
