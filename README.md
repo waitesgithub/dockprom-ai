@@ -485,3 +485,46 @@ This project is provided as-is. Grafana components are licensed under their resp
 - [Tempo Documentation](https://grafana.com/docs/tempo/)
 - [OpenTelemetry Documentation](https://opentelemetry.io/docs/)
 - [Grafana MCP Server](https://github.com/grafana/mcp-grafana)
+
+## AI Integration: Ollama + mcp-grafana + Loki logging
+
+```
+All containers -> Loki docker logging driver -> Loki (3100) -> Grafana (3000)
+  -> mcp-grafana (8000) -> Ollama (11434) -> AI agents (Claude, Cursor, ...)
+```
+
+### Loki docker logging driver
+Every service in `docker-compose.yaml` uses `driver: loki` with labels `service=<name>,job=monitoring`.
+Install the plugin on the Docker host first:
+
+```
+docker plugin install grafana/loki-docker-driver:latest --alias loki --grant-all-permissions
+```
+
+Note: the driver runs in the Docker daemon, not on the compose network, so `http://loki:3100` may not resolve
+from the host; if logs do not arrive, change `loki-url` to `http://localhost:3100/loki/api/v1/push`.
+Loki is configured in `loki-config.yaml` (Loki 3.x image; schema v13/TSDB, structured metadata and the pattern
+ingester need Loki 3.x, so 2.9.3 is not used).
+
+Example LogQL: `{service="ollama"}`, `{service="mcp-grafana"} |= "error"`, `{job="monitoring"} |~ "(?i)error"`.
+
+### mcp-grafana
+1. In Grafana create a Service Account (Administration > Users and access > Service accounts) with a role that
+   grants dashboards, datasources, alerting and logs read/write access, then create a token.
+2. `export GRAFANA_SERVICE_ACCOUNT_TOKEN=<token>` (or put it in `.env`) and run `docker compose up -d mcp-grafana`.
+3. Point MCP clients at `http://localhost:8000/sse`, or for stdio clients (Claude Desktop, Cursor):
+
+```json
+{"mcpServers":{"grafana":{"command":"docker","args":["run","--rm","-i","--network","monitoring",
+ "-e","GRAFANA_URL=http://grafana:3000","-e","GRAFANA_SERVICE_ACCOUNT_TOKEN","grafana/mcp-grafana","-t","stdio"],
+ "env":{"GRAFANA_SERVICE_ACCOUNT_TOKEN":"<token>"}}}}
+```
+
+### Ollama
+`docker exec ollama ollama pull llama2` (also `mistral`, `neural-chat`). For NVIDIA GPUs uncomment the `deploy`
+block of the `ollama` service.
+
+### Troubleshooting
+- No logs in Loki: check the plugin is installed (`docker plugin ls`) and `curl localhost:3100/ready`.
+- mcp-grafana unauthorized: verify `GRAFANA_SERVICE_ACCOUNT_TOKEN`.
+- Rate limit errors: raise `ingestion_rate_mb` / `per_stream_rate_limit` in `loki-config.yaml`.
