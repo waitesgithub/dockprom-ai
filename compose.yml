@@ -16,10 +16,12 @@ volumes:
     name: tempo-data
   otel-data:
     name: otel-data
+  victoria-data:
+    name: victoria-data
     
 services:
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.15.1  # https://github.com/prometheus/prometheus/releases/tag/v3.15.1
     container_name: prometheus
     restart: unless-stopped
     volumes:
@@ -30,8 +32,6 @@ services:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--storage.tsdb.retention.time=90d'  # retention time
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
       - '--web.enable-lifecycle'   
     ports:
       - "9090:9090"
@@ -39,7 +39,7 @@ services:
       - monitoring
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:13.2.4  # https://github.com/grafana/grafana/releases/tag/v13.2.4
     container_name: grafana
     restart: unless-stopped
     ports:
@@ -50,7 +50,7 @@ services:
       - monitoring
 
   node-exporter:
-    image: prom/node-exporter:latest
+    image: prom/node-exporter:v1.12.1  # https://github.com/prometheus/node_exporter/releases/tag/v1.12.1
     container_name: node-exporter
     restart: unless-stopped
     volumes:
@@ -69,7 +69,7 @@ services:
       - monitoring
 
   alertmanager:
-    image: prom/alertmanager:latest
+    image: prom/alertmanager:v0.34.1  # https://github.com/prometheus/alertmanager/releases/tag/v0.34.1
     container_name: alertmanager
     restart: unless-stopped
     ports: 
@@ -83,7 +83,7 @@ services:
       - monitoring  
 
   tempo:
-    image: grafana/tempo:latest
+    image: grafana/tempo:3.1.1  # https://github.com/grafana/tempo/releases/tag/v3.1.1
     container_name: tempo
     restart: unless-stopped
     ports:     
@@ -98,7 +98,7 @@ services:
 
             
   loki:
-    image: grafana/loki:latest
+    image: grafana/loki:3.7.9  # https://github.com/grafana/loki/releases/tag/v3.7.9
     container_name: loki
     restart: unless-stopped
     ports:
@@ -111,7 +111,7 @@ services:
       - monitoring    
       
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
+    image: otel/opentelemetry-collector-contrib:0.163.0  # https://github.com/open-telemetry/opentelemetry-collector-releases/releases/tag/v0.163.0
     container_name: otel-collector
     restart: unless-stopped
     volumes:
@@ -129,4 +129,18 @@ services:
       - 4318:4318 # OTLP http receiver
       - 55679:55679 # zpages extension        
     networks:
-      - monitoring        
+      - monitoring
+
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.154.1  # https://github.com/VictoriaMetrics/VictoriaMetrics/releases/tag/v1.154.1
+    container_name: victoriametrics
+    restart: unless-stopped
+    volumes:
+      - victoria-data:/victoria-metrics-data
+    command:
+      - '-storageDataPath=/victoria-metrics-data'
+      - '-retentionPeriod=90d'   # match Prometheus retention
+    ports:
+      - "8428:8428"   # HTTP API, UI and Prometheus-compatible query endpoint
+    networks:
+      - monitoring

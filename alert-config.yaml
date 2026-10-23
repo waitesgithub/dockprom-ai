@@ -1,0 +1,26 @@
+# AlertManager config
+# Reference: https://prometheus.io/docs/alerting/latest/configuration/
+global:
+  resolve_timeout: 5m
+
+templates:
+  - /etc/alertmanager/email-template.tmpl
+
+route:
+  receiver: default
+  group_by: ['alertname', 'job']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: default
+    # Replace with real SMTP settings (and add to a secrets store) to enable email,
+    # or use slack_configs / webhook_configs.
+    # email_configs:
+    #   - to: 'you@example.com'
+    #     from: 'alertmanager@example.com'
+    #     smarthost: 'smtp.example.com:587'
+    #     auth_username: 'alertmanager@example.com'
+    #     auth_password: '<password>'
+    #     html: '{{ template "email.custom.html" . }}'

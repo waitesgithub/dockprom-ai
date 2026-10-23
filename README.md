@@ -9,6 +9,7 @@ A comprehensive monitoring solution for Docker hosts and containers with AI-powe
 - **Grafana** - Visualization and dashboards
 - **Loki** - Log aggregation
 - **Tempo** - Distributed tracing
+- **VictoriaMetrics** - Long-term metrics storage (Prometheus remote write target)
 - **OpenTelemetry Collector** - OTLP ingest
 - **cAdvisor** - Container metrics
 - **NodeExporter** - Host metrics
@@ -50,6 +51,7 @@ The stack includes the following services:
 | **Prometheus** | `http://<host-ip>:9090` | Metrics database and queries |
 | **Prometheus Pushgateway** | `http://<host-ip>:9091` | Push acceptor for ephemeral/batch jobs |
 | **AlertManager** | `http://<host-ip>:9093` | Alert management and routing |
+| **VictoriaMetrics** | `http://<host-ip>:8428` | Long-term metrics storage, Prometheus-compatible API and UI (`/vmui`) |
 | **Loki** | `http://<host-ip>:3100` | Log aggregation database |
 | **Tempo** | `http://<host-ip>:3200` | Distributed tracing database |
 | **OpenTelemetry Collector** | `http://<host-ip>:4318` (HTTP) | OTLP metrics, logs, and traces ingest |
@@ -59,6 +61,84 @@ The stack includes the following services:
 | **cAdvisor** | - | Container metrics collector |
 | **Alloy** | - | Docker logs collector → Loki |
 | **Caddy** | - | Reverse proxy with basic auth |
+
+## How the Services Work Together
+
+| Service | Role | Recommended configuration |
+|---------|------|---------------------------|
+| **Prometheus** | Scrapes metrics (node-exporter, otel-collector, itself) and evaluates alert rules | Keep 90d local retention; add a `remote_write` to VictoriaMetrics; enable `--web.enable-lifecycle` for reloads |
+| **VictoriaMetrics** | Long-term, compressed metrics storage; accepts Prometheus remote write and serves PromQL/MetricsQL | Set `-retentionPeriod` to your long-term needs; keep data on the `victoria-data` volume |
+| **Grafana** | Dashboards and exploration across all datasources | Change the default admin password; provision datasources |
+| **AlertManager** | Receives alerts from Prometheus and routes to email/Slack/etc. | Configure receivers in `alert-config.yaml` |
+| **Node Exporter** | Host CPU, memory, disk and network metrics | Mount `/proc`, `/sys`, `/` read-only |
+| **Loki** | Log storage | Configure in `loki-config.yaml`; size retention to disk |
+| **Tempo** | Trace storage | Configure in `tempo.yaml` |
+| **OpenTelemetry Collector** | Single OTLP ingest point (4317 gRPC / 4318 HTTP) for traces, logs and metrics | Point apps to it with `OTEL_EXPORTER_OTLP_ENDPOINT` |
+
+Data flow: applications send OTLP to the Collector, which forwards traces to Tempo, logs to Loki and exposes metrics for Prometheus. Prometheus scrapes targets, fires alerts to AlertManager, and forwards samples to VictoriaMetrics for long-term storage.
+
+### Using VictoriaMetrics with Prometheus
+
+Add to `prometheus.yml`:
+
+```yaml
+remote_write:
+  - url: http://victoriametrics:8428/api/v1/write
+```
+
+In Grafana, add a Prometheus-type datasource with URL `http://victoriametrics:8428` to query the long-term data.
+
+### General recommendations
+
+- Keep all services on the shared `monitoring` network and refer to them by container name.
+- Use the pinned image versions; update them deliberately (see Pinned Versions).
+- Do not expose ports publicly without the Caddy reverse proxy and authentication.
+- Retention: use the same value (90d) for Prometheus and VictoriaMetrics unless you want VictoriaMetrics to keep more history.
+- Back up the named volumes (`prometheus_data`, `grafana-data`, `loki-data`, `tempo-data`, `victoria-data`).
+
+## Pinned Versions
+
+All image tags are pinned to exact versions from official GitHub releases (no `latest` tags), so deployments are reproducible. Each image line in `compose.yml` has a comment linking to its release.
+
+| Service | Image | Version | Released | Releases |
+|---------|-------|---------|----------|----------|
+| Prometheus | `prom/prometheus` | v3.15.1 | Oct 21, 2026 | [link](https://github.com/prometheus/prometheus/releases) |
+| Grafana | `grafana/grafana` | 13.2.4 | Oct 13, 2026 | [link](https://github.com/grafana/grafana/releases) |
+| Loki | `grafana/loki` | 3.7.9 | Oct 20, 2026 | [link](https://github.com/grafana/loki/releases) |
+| Tempo | `grafana/tempo` | 3.1.1 | - | [link](https://github.com/grafana/tempo/releases) |
+| OpenTelemetry Collector Contrib | `otel/opentelemetry-collector-contrib` | 0.163.0 | Oct 14, 2026 | [link](https://github.com/open-telemetry/opentelemetry-collector-releases/releases) |
+| AlertManager | `prom/alertmanager` | v0.34.1 | Sep 17, 2026 | [link](https://github.com/prometheus/alertmanager/releases) |
+| Node Exporter | `prom/node-exporter` | v1.12.1 | Jul 14, 2026 | [link](https://github.com/prometheus/node_exporter/releases) |
+| Pushgateway | `prom/pushgateway` | v1.11.4 | Oct 8, 2026 | [link](https://github.com/prometheus/pushgateway/releases) |
+| Logporter | `lifailon/logporter` | v1.2.0 | Jul 31, 2026 | [link](https://github.com/Lifailon/logporter/releases) |
+| Ollama | `ollama/ollama` | 0.40.9 | - | [link](https://github.com/ollama/ollama/releases) |
+| Caddy | `caddy` | 2.11.7 | Oct 3, 2026 | [link](https://github.com/caddyserver/caddy/releases) |
+| mcp-grafana | `grafana/mcp-grafana` | 2.1.1 | - | [link](https://github.com/grafana/mcp-grafana/releases) |
+| VictoriaMetrics | `victoriametrics/victoria-metrics` | v1.154.1 | - | [link](https://github.com/VictoriaMetrics/VictoriaMetrics/releases) |
+
+Pushgateway, Logporter, Ollama, Caddy and mcp-grafana are not currently defined in `compose.yml`; use the versions above when adding them.
+
+### Major version upgrades
+
+- **Loki** v2 → v3
+- **Tempo** v2 → v3
+- **Logporter** v0 → v1
+
+Review the upstream release notes and migrate configs (`loki-config.yaml`, `tempo.yaml`) before upgrading.
+
+### Versioning strategy and updating
+
+Tags follow upstream semantic versioning exactly as published (some images omit the `v` prefix). To update a service:
+
+1. Check the releases page linked above and read the changelog.
+2. Edit the `image:` tag and its release comment in `compose.yml`, and update this table.
+3. Run `docker-compose pull <service> && docker-compose up -d <service>`.
+
+### Compatibility notes
+
+- Grafana MCP Server requires Grafana 9.0 or later.
+- Loki 3.x and Tempo 3.x have configuration changes from 2.x; validate configs before upgrading.
+- Upgrade the Grafana stack components together and test dashboards and datasources afterwards.
 
 ## AI-Powered Observability with Grafana MCP Server
 
@@ -175,7 +255,7 @@ Navigate to `http://<host-ip>:3000` and login with **admin / admin**.
 
 ```yaml
 grafana:
-  image: grafana/grafana:latest
+  image: grafana/grafana:13.2.4
   env_file:
     - config
 ```
@@ -460,7 +540,7 @@ If upgrading Grafana to v5.2.2+, the user ID changed from 104 to 472.
 ```bash
 docker-compose down
 
-# Modify docker-compose.yml to include 'user: root' for grafana service
+# Modify compose.yml to include 'user: root' for grafana service
 docker-compose up -d
 
 docker exec -it --user root grafana bash
