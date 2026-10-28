@@ -11,13 +11,6 @@ const config = {
   projectName: 'dockprom-ai',
   trailingSlash: false,
 
-  // Enable Faster builds in v3.10.2
-  future: {
-    v4: {
-      fasterByDefault: true,
-    },
-  },
-
   onBrokenLinks: 'warn',
   onBrokenMarkdownLinks: 'warn',
 
