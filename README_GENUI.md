@@ -1,7 +1,10 @@
-# Dockprom-AI: Generative UI & AIOps Copilot Stack
+<p align="center">
+  <img src="docs/dockprom-ai-logo.png" alt="Dockprom-AI logo" width="600" />
+</p>
 
 <p align="center">
-  <img src="docs/dockprom-ai-logo.png" alt="Dockprom-AI logo" width="220" />
+  <b>Dockprom-AI: Generative UI & AIOps Copilot Stack</b><br>
+  <sub>OpenUI • OpenIntelligence UI • Chainlit</sub>
 </p>
 
 This companion repository layer extends **Dockprom-AI** with dynamic Generative UI (GenUI), conversational multi-turn triage, and RAG over incident postmortems using `pgvector`.
