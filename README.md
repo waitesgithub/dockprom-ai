@@ -1,6 +1,6 @@
 <p align="center">
   <picture>
-    <img src="./docs/dockprom-ai-logo.svg" alt="Dockprom-AI Logo" width="450">
+    <img src="./docs/dockprom-ai-logo.png" alt="Dockprom-AI Logo" width="350">
   </picture>
 </p>
 
