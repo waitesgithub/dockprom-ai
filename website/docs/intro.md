@@ -29,7 +29,7 @@ Dockprom-AI operates as a coordinated **dual-stack architecture** communicating 
 The core pipeline captures metrics, distributed traces, and container logs with deep Linux kernel and host hardware instrumentation:
 
 <p align="center">
-  <img src="/img/architecture-core.svg" alt="Dockprom-AI Core Architecture" width="100%" />
+  <img src="/dockprom-ai/img/architecture-core.svg" alt="Dockprom-AI Core Architecture" width="100%" />
 </p>
 
 ### 2. Generative UI & Copilot Pipeline
@@ -37,13 +37,12 @@ The core pipeline captures metrics, distributed traces, and container logs with 
 The GenUI pipeline connects user prompts to real-time telemetry, semantic runbook embeddings, and streaming React components:
 
 <p align="center">
-  <img src="/img/architecture-genui.svg" alt="Dockprom-AI GenUI Architecture" width="100%" />
+  <img src="/dockprom-ai/img/architecture-genui.svg" alt="Dockprom-AI GenUI Architecture" width="100%" />
 </p>
 
 ---
 
 ## Key Stack Components
-
 ### 1. Observability & Telemetry Engine (`compose.yml`)
 - **Prometheus v3.15.1**: High-performance time-series database with PromQL evaluation, TSDB compaction, and native OpenTelemetry ingest.
 - **Grafana 13.3.0**: Unified telemetry frontend featuring pre-provisioned dashboards, correlation links, and native TraceQL/LogQL exploration.
