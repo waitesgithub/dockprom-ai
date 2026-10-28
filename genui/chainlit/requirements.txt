@@ -1,0 +1,5 @@
+chainlit>=2.12.0
+httpx>=0.28.1
+openai>=1.68.0
+pgvector>=0.3.6
+psycopg2-binary>=2.9.10

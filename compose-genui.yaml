@@ -1,0 +1,51 @@
+services:
+  open-intelligent-ui:
+    build:
+      context: ./genui/open-intelligent-ui
+      dockerfile: Dockerfile
+      args:
+        OPEN_INTELLIGENT_UI_REF: ${OPEN_INTELLIGENT_UI_REF:-3b39c06b954e87c394ef95fee41a7e0084f94a27}
+    container_name: open-intelligent-ui
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      NODE_ENV: production
+      MODEL_PROVIDER: ollama
+      OLLAMA_BASE_URL: http://ollama-gateway:11435/v1
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      LLM_REASONING_EFFORT: ${LLM_REASONING_EFFORT:-low}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - monitor-net
+    depends_on:
+      - chainlit-genui
+
+  chainlit-genui:
+    build:
+      context: ./genui/chainlit
+      dockerfile: Dockerfile
+    container_name: chainlit-genui
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8050:8000"
+    volumes:
+      - ./genui/chainlit/app.py:/app/app.py:ro
+    environment:
+      OLLAMA_ENDPOINT: http://ollama-gateway:11435/v1
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
+      PGVECTOR_URL: ${PGVECTOR_URL:?Set PGVECTOR_URL in your environment}
+      GRAFANA_MCP_URL: http://mcp-grafana:8000/sse
+      PROMETHEUS_MCP_URL: http://prometheus-mcp:8080/sse
+      OPENUI_SERVICE_URL: http://open-intelligent-ui:3000
+      OPENUI_PUBLIC_URL: ${OPENUI_PUBLIC_URL:-http://localhost:3001}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - monitor-net
+
+networks:
+  monitor-net:
+    external: true
