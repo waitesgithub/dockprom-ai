@@ -1,0 +1,304 @@
+<svg id="svg-core" class="w-full h-auto max-h-[820px] select-none" viewBox="0 0 1200 780" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <!-- Gradients -->
+            <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#0a0e14"/>
+              <stop offset="100%" stop-color="#06090e"/>
+            </linearGradient>
+            <linearGradient id="hostGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#161b22"/>
+              <stop offset="100%" stop-color="#0d1117"/>
+            </linearGradient>
+            <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#06b6d4"/>
+              <stop offset="100%" stop-color="#3b82f6"/>
+            </linearGradient>
+            <linearGradient id="purpleGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#8b5cf6"/>
+              <stop offset="100%" stop-color="#d946ef"/>
+            </linearGradient>
+            <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#10b981"/>
+              <stop offset="100%" stop-color="#14b8a6"/>
+            </linearGradient>
+
+            <!-- Glow Filters -->
+            <filter id="glow-cyan" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="4" result="blur"/>
+              <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+            </filter>
+            <filter id="glow-purple" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="4" result="blur"/>
+              <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+            </filter>
+            <filter id="glow-amber" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="4" result="blur"/>
+              <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+            </filter>
+
+            <!-- Markers -->
+            <marker id="arrow-cyan" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 8 5 L 0 9 z" fill="#06b6d4"/>
+            </marker>
+            <marker id="arrow-purple" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 8 5 L 0 9 z" fill="#a855f7"/>
+            </marker>
+            <marker id="arrow-emerald" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 8 5 L 0 9 z" fill="#10b981"/>
+            </marker>
+            <marker id="arrow-amber" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 8 5 L 0 9 z" fill="#f59e0b"/>
+            </marker>
+          </defs>
+
+          <!-- Diagram Background -->
+          <rect width="1200" height="780" fill="url(#bgGrad)"/>
+          
+          <!-- Subtle Grid -->
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#21262d" stroke-width="0.75" stroke-opacity="0.4"/>
+          </pattern>
+          <rect width="1200" height="780" fill="url(#grid)"/>
+
+          <!-- Outer Host Boundary -->
+          <rect x="25" y="25" width="1150" height="730" rx="20" fill="url(#hostGrad)" stroke="#30363d" stroke-width="1.5"/>
+          
+          <!-- Host Header Tag -->
+          <g transform="translate(45, 45)">
+            <rect x="0" y="0" width="220" height="30" rx="8" fill="#1f2937" stroke="#374151" stroke-width="1"/>
+            <circle cx="15" cy="15" r="4" fill="#10b981">
+              <animate attributeName="opacity" values="1;0.3;1" dur="2s" repeatCount="indefinite"/>
+            </circle>
+            <text x="30" y="20" font-family="'Inter', sans-serif" font-size="12" font-weight="600" fill="#f3f4f6">DOCKER HOST PLATFORM</text>
+            <text x="180" y="20" font-family="'Fira Code', monospace" font-size="10" fill="#9ca3af">Linux</text>
+          </g>
+
+          <!-- ============================================================ -->
+          <!-- SECTION 1: HOST OLLAMA & ENVOY GATEWAY (Top Right) -->
+          <!-- ============================================================ -->
+          <g transform="translate(850, 45)">
+            <!-- Envoy Gateway Container -->
+            <rect x="0" y="0" width="290" height="95" rx="12" fill="#111827" stroke="#06b6d4" stroke-width="1.5" filter="url(#glow-cyan)"/>
+            <rect x="0" y="0" width="290" height="95" rx="12" fill="#111827" stroke="#06b6d4" stroke-width="1.5"/>
+            <text x="18" y="28" font-family="'Inter', sans-serif" font-size="13" font-weight="700" fill="#38bdf8">Ollama Gateway (Envoy)</text>
+            <text x="18" y="48" font-family="'Fira Code', monospace" font-size="11" fill="#94a3b8">Port :11435 • v1.40.2</text>
+            <rect x="18" y="60" width="130" height="20" rx="4" fill="#0369a1" fill-opacity="0.3"/>
+            <text x="24" y="74" font-family="'Inter', sans-serif" font-size="10" fill="#7dd3fc">OTLP Traces &amp; RPS Metrics</text>
+          </g>
+
+          <!-- Host Native Ollama Box -->
+          <g transform="translate(850, 175)">
+            <rect x="0" y="0" width="290" height="85" rx="12" fill="#18181b" stroke="#a855f7" stroke-width="1.5" stroke-dasharray="4 3"/>
+            <text x="18" y="28" font-family="'Inter', sans-serif" font-size="13" font-weight="700" fill="#c084fc">Host Native Ollama</text>
+            <text x="18" y="48" font-family="'Fira Code', monospace" font-size="11" fill="#94a3b8">0.0.0.0:11434 • Host GPU</text>
+            <text x="18" y="68" font-family="'Inter', sans-serif" font-size="10" fill="#a1a1aa">Llama 3.2 • nomic-embed-text</text>
+          </g>
+
+          <!-- Flow: Envoy to Host Ollama -->
+          <path d="M 995 140 L 995 175" stroke="#38bdf8" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrow-cyan)">
+            <animate attributeName="stroke-dashoffset" values="20;0" dur="1s" repeatCount="indefinite"/>
+          </path>
+
+          <!-- ============================================================ -->
+          <!-- SECTION 2: AI AGENTS & MCP SERVERS (Top Left) -->
+          <!-- ============================================================ -->
+          <g transform="translate(60, 100)">
+            <!-- Client Box -->
+            <rect x="0" y="0" width="220" height="110" rx="12" fill="#0f172a" stroke="#6366f1" stroke-width="1.5"/>
+            <text x="16" y="28" font-family="'Inter', sans-serif" font-size="13" font-weight="700" fill="#818cf8">AI Coding Agents</text>
+            <text x="16" y="48" font-family="'Inter', sans-serif" font-size="11" fill="#94a3b8">Claude Desktop • Cursor</text>
+            <text x="16" y="66" font-family="'Inter', sans-serif" font-size="11" fill="#94a3b8">Cline • Roo Code • Chainlit</text>
+            <rect x="16" y="78" width="120" height="20" rx="4" fill="#312e81" fill-opacity="0.4"/>
+            <text x="22" y="92" font-family="'Fira Code', monospace" font-size="10" fill="#c7d2fe">SSE Transport (v2.1)</text>
+          </g>
+
+          <!-- Grafana MCP Server -->
+          <g transform="translate(340, 75)">
+            <rect x="0" y="0" width="220" height="65" rx="10" fill="#131d2e" stroke="#0ea5e9" stroke-width="1.5"/>
+            <text x="16" y="26" font-family="'Inter', sans-serif" font-size="12" font-weight="700" fill="#38bdf8">Grafana MCP Server</text>
+            <text x="16" y="44" font-family="'Fira Code', monospace" font-size="10.5" fill="#94a3b8">Port :8000/sse • v2.1.1</text>
+            <circle cx="198" cy="22" r="4" fill="#38bdf8">
+              <animate attributeName="opacity" values="1;0.2;1" dur="1.8s" repeatCount="indefinite"/>
+            </circle>
+          </g>
+
+          <!-- Prometheus MCP Server -->
+          <g transform="translate(340, 155)">
+            <rect x="0" y="0" width="220" height="65" rx="10" fill="#131d2e" stroke="#f97316" stroke-width="1.5"/>
+            <text x="16" y="26" font-family="'Inter', sans-serif" font-size="12" font-weight="700" fill="#fb923c">Prometheus MCP Server</text>
+            <text x="16" y="44" font-family="'Fira Code', monospace" font-size="10.5" fill="#94a3b8">Port :8080/sse • v0.18.0</text>
+            <circle cx="198" cy="22" r="4" fill="#fb923c">
+              <animate attributeName="opacity" values="1;0.2;1" dur="1.5s" repeatCount="indefinite"/>
+            </circle>
+          </g>
+
+          <!-- Animated Flows from Agents to MCP -->
+          <path d="M 280 130 C 305 130, 305 105, 340 105" fill="none" stroke="#0ea5e9" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrow-cyan)">
+            <animate attributeName="stroke-dashoffset" values="18;0" dur="1.2s" repeatCount="indefinite"/>
+          </path>
+          <path d="M 280 160 C 305 160, 305 185, 340 185" fill="none" stroke="#f97316" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrow-amber)">
+            <animate attributeName="stroke-dashoffset" values="18;0" dur="1.2s" repeatCount="indefinite"/>
+          </path>
+
+          <!-- ============================================================ -->
+          <!-- SECTION 3: CORE MONITORING (Grafana, Prometheus, Caddy) -->
+          <!-- ============================================================ -->
+          <!-- Caddy Reverse Proxy (Middle Center) -->
+          <g transform="translate(620, 95)">
+            <rect x="0" y="0" width="160" height="120" rx="12" fill="#1c1917" stroke="#10b981" stroke-width="1.5"/>
+            <text x="14" y="26" font-family="'Inter', sans-serif" font-size="12" font-weight="700" fill="#34d399">Caddy v2 Proxy</text>
+            <text x="14" y="44" font-family="'Fira Code', monospace" font-size="10" fill="#a7f3d0">:3000, :9090, :9093</text>
+            <rect x="14" y="55" width="130" height="22" rx="4" fill="#064e3b" fill-opacity="0.4"/>
+            <text x="20" y="70" font-family="'Inter', sans-serif" font-size="9.5" fill="#6ee7b7">Bcrypt Basic Auth</text>
+            <text x="14" y="98" font-family="'Fira Code', monospace" font-size="9" fill="#9ca3af">v2.11.7-alpine</text>
+          </g>
+
+          <!-- Grafana v13 -->
+          <g transform="translate(340, 260)">
+            <rect x="0" y="0" width="220" height="90" rx="12" fill="#111827" stroke="#f59e0b" stroke-width="1.5"/>
+            <text x="16" y="28" font-family="'Inter', sans-serif" font-size="13" font-weight="700" fill="#fbbf24">Grafana 13.3.0</text>
+            <text x="16" y="48" font-family="'Fira Code', monospace" font-size="11" fill="#94a3b8">Port :3000 • Dashboards</text>
+            <text x="16" y="68" font-family="'Inter', sans-serif" font-size="10" fill="#cbd5e1">Explore • LogQL &amp; TraceQL</text>
+          </g>
+
+          <!-- Prometheus v3 -->
+          <g transform="translate(600, 260)">
+            <rect x="0" y="0" width="200" height="90" rx="12" fill="#111827" stroke="#ef4444" stroke-width="1.5"/>
+            <text x="16" y="28" font-family="'Inter', sans-serif" font-size="13" font-weight="700" fill="#f87171">Prometheus v3.15.1</text>
+            <text x="16" y="48" font-family="'Fira Code', monospace" font-size="11" fill="#94a3b8">Port :9090 • PromQL TSDB</text>
+            <text x="16" y="68" font-family="'Inter', sans-serif" font-size="10" fill="#cbd5e1">Head Compaction • 200h Ret</text>
+          </g>
+
+          <!-- Alertmanager -->
+          <g transform="translate(850, 280)">
+            <rect x="0" y="0" width="210" height="70" rx="12" fill="#111827" stroke="#fb923c" stroke-width="1.5"/>
+            <text x="16" y="26" font-family="'Inter', sans-serif" font-size="12" font-weight="700" fill="#fdba74">Alertmanager v0.34.1</text>
+            <text x="16" y="44" font-family="'Fira Code', monospace" font-size="10.5" fill="#94a3b8">Port :9093 • Deduplication</text>
+            <text x="16" y="60" font-family="'Inter', sans-serif" font-size="9.5" fill="#fed7aa">Webhooks &amp; Routing</text>
+          </g>
+
+          <!-- MCP -> Services connections -->
+          <path d="M 450 140 L 450 260" stroke="#0ea5e9" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#arrow-cyan)"/>
+          <path d="M 450 220 C 450 240, 680 240, 680 260" fill="none" stroke="#f97316" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#arrow-amber)"/>
+          <!-- Prom to Alertmanager -->
+          <path d="M 800 305 L 850 305" stroke="#ef4444" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#arrow-amber)">
+            <animate attributeName="stroke-dashoffset" values="16;0" dur="1s" repeatCount="indefinite"/>
+          </path>
+
+          <!-- ============================================================ -->
+          <!-- SECTION 4: INGESTION PIPELINE (OTel, Loki, Tempo, Exporters) -->
+          <!-- ============================================================ -->
+          <!-- Workloads & Exporters (Bottom Left) -->
+          <g transform="translate(60, 410)">
+            <rect x="0" y="0" width="230" height="150" rx="12" fill="#090d16" stroke="#475569" stroke-width="1.5"/>
+            <text x="16" y="26" font-family="'Inter', sans-serif" font-size="12" font-weight="700" fill="#94a3b8">Docker Workloads &amp; Hosts</text>
+            
+            <rect x="14" y="38" width="202" height="44" rx="6" fill="#1e293b"/>
+            <text x="24" y="56" font-family="'Inter', sans-serif" font-size="11" font-weight="600" fill="#38bdf8">Logporter v1.5.0</text>
+            <text x="24" y="72" font-family="'Fira Code', monospace" font-size="9.5" fill="#64748b">:9333 • Container CPU/Mem/Logs</text>
+
+            <rect x="14" y="90" width="202" height="44" rx="6" fill="#1e293b"/>
+            <text x="24" y="108" font-family="'Inter', sans-serif" font-size="11" font-weight="600" fill="#34d399">Node Exporter v1.12.1</text>
+            <text x="24" y="124" font-family="'Fira Code', monospace" font-size="9.5" fill="#64748b">:9100 • Linux Kernel/FS/IO</text>
+          </g>
+
+          <!-- OpenTelemetry Collector -->
+          <g transform="translate(340, 420)">
+            <rect x="0" y="0" width="220" height="130" rx="12" fill="#1e1b4b" stroke="#818cf8" stroke-width="1.5" filter="url(#glow-purple)"/>
+            <rect x="0" y="0" width="220" height="130" rx="12" fill="#1e1b4b" stroke="#818cf8" stroke-width="1.5"/>
+            <text x="16" y="28" font-family="'Inter', sans-serif" font-size="13" font-weight="700" fill="#c7d2fe">OTel Collector Contrib</text>
+            <text x="16" y="48" font-family="'Fira Code', monospace" font-size="11" fill="#a5b4fc">v0.164.0</text>
+            <rect x="16" y="60" width="188" height="24" rx="4" fill="#312e81"/>
+            <text x="22" y="76" font-family="'Fira Code', monospace" font-size="10" fill="#e0e7ff">OTLP Ingest :4317 / :4318</text>
+            <text x="16" y="104" font-family="'Inter', sans-serif" font-size="10" fill="#a5b4fc">Pipelines: Traces • Logs • Metrics</text>
+            <text x="16" y="118" font-family="'Fira Code', monospace" font-size="9" fill="#818cf8">Prom Exp :8889</text>
+          </g>
+
+          <!-- Tempo Traces -->
+          <g transform="translate(610, 410)">
+            <rect x="0" y="0" width="180" height="65" rx="10" fill="#172554" stroke="#60a5fa" stroke-width="1.5"/>
+            <text x="14" y="26" font-family="'Inter', sans-serif" font-size="12" font-weight="700" fill="#93c5fd">Tempo v3.1.1</text>
+            <text x="14" y="44" font-family="'Fira Code', monospace" font-size="10" fill="#bfdbfe">:3200 • Distributed Tracing</text>
+            <text x="14" y="56" font-family="'Inter', sans-serif" font-size="9" fill="#93c5fd">WAL &amp; Parquet storage</text>
+          </g>
+
+          <!-- Loki Logs -->
+          <g transform="translate(610, 490)">
+            <rect x="0" y="0" width="180" height="65" rx="10" fill="#142e1d" stroke="#4ade80" stroke-width="1.5"/>
+            <text x="14" y="26" font-family="'Inter', sans-serif" font-size="12" font-weight="700" fill="#86efac">Loki v3.7.9</text>
+            <text x="14" y="44" font-family="'Fira Code', monospace" font-size="10" fill="#bbf7d0">:3100 • TSDB v13 Schema</text>
+            <text x="14" y="56" font-family="'Inter', sans-serif" font-size="9" fill="#86efac">Structured metadata</text>
+          </g>
+
+          <!-- Flows: Exporters -> OTel & Prom -->
+          <path d="M 290 460 L 340 460" stroke="#06b6d4" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#arrow-cyan)">
+            <animate attributeName="stroke-dashoffset" values="14;0" dur="0.9s" repeatCount="indefinite"/>
+          </path>
+          <path d="M 290 510 C 310 510, 310 380, 595 310" fill="none" stroke="#10b981" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow-emerald)"/>
+
+          <!-- Flows: OTel -> Tempo, Loki, Prometheus -->
+          <path d="M 560 445 L 610 445" stroke="#60a5fa" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#arrow-cyan)">
+            <animate attributeName="stroke-dashoffset" values="14;0" dur="0.8s" repeatCount="indefinite"/>
+          </path>
+          <path d="M 560 515 L 610 515" stroke="#4ade80" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#arrow-emerald)">
+            <animate attributeName="stroke-dashoffset" values="14;0" dur="0.8s" repeatCount="indefinite"/>
+          </path>
+          <path d="M 500 420 C 500 370, 610 370, 610 350" fill="none" stroke="#f87171" stroke-width="1.5" stroke-dasharray="5 3"/>
+
+          <!-- ============================================================ -->
+          <!-- SECTION 5: AIOPS, DATABASE & COLLABORATION (Bottom Right) -->
+          <!-- ============================================================ -->
+          <!-- Keep AIOps -->
+          <g transform="translate(850, 400)">
+            <rect x="0" y="0" width="270" height="75" rx="12" fill="#2d1537" stroke="#e879f9" stroke-width="1.5"/>
+            <text x="16" y="26" font-family="'Inter', sans-serif" font-size="12.5" font-weight="700" fill="#f0abfc">Keep AIOps v0.54.3</text>
+            <text x="16" y="44" font-family="'Fira Code', monospace" font-size="10.5" fill="#e9d5ff">UI :8082 • API :8080</text>
+            <text x="16" y="62" font-family="'Inter', sans-serif" font-size="9.5" fill="#f5d0fe">Alert Enrichment &amp; Correlation</text>
+          </g>
+
+          <!-- Mattermost Collaboration -->
+          <g transform="translate(850, 490)">
+            <rect x="0" y="0" width="270" height="75" rx="12" fill="#0f2942" stroke="#38bdf8" stroke-width="1.5"/>
+            <text x="16" y="26" font-family="'Inter', sans-serif" font-size="12.5" font-weight="700" fill="#7dd3fc">Mattermost Team 12.0.1</text>
+            <text x="16" y="44" font-family="'Fira Code', monospace" font-size="10.5" fill="#bae6fd">Port :8065 • Incident Channels</text>
+            <text x="16" y="62" font-family="'Inter', sans-serif" font-size="9.5" fill="#e0f2fe">Automated Webhooks &amp; ChatOps</text>
+          </g>
+
+          <!-- Alertmanager routing to Keep & Mattermost -->
+          <path d="M 980 350 L 980 400" stroke="#fb923c" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#arrow-amber)">
+            <animate attributeName="stroke-dashoffset" values="14;0" dur="1s" repeatCount="indefinite"/>
+          </path>
+          <path d="M 1030 350 C 1030 420, 1030 440, 1030 490" fill="none" stroke="#38bdf8" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#arrow-cyan)"/>
+
+          <!-- pgvector / Postgres 17 Unified Database (Bottom Bar) -->
+          <g transform="translate(340, 600)">
+            <rect x="0" y="0" width="780" height="115" rx="14" fill="#022c22" stroke="#10b981" stroke-width="1.5" filter="url(#glow-emerald)"/>
+            <rect x="0" y="0" width="780" height="115" rx="14" fill="#022c22" stroke="#10b981" stroke-width="1.5"/>
+            
+            <text x="24" y="32" font-family="'Inter', sans-serif" font-size="14" font-weight="700" fill="#6ee7b7">PostgreSQL 17 + pgvector (Unified Database)</text>
+            <text x="24" y="52" font-family="'Fira Code', monospace" font-size="11" fill="#a7f3d0">Container: mattermost-db • Port :5432 • pgvector/pgvector:pg17</text>
+
+            <rect x="24" y="66" width="220" height="34" rx="6" fill="#064e3b"/>
+            <text x="34" y="82" font-family="'Inter', sans-serif" font-size="10" font-weight="600" fill="#d1fae5">Keep AIOps Store</text>
+            <text x="34" y="94" font-family="'Fira Code', monospace" font-size="8.5" fill="#a7f3d0">db: keep • alert events</text>
+
+            <rect x="260" y="66" width="220" height="34" rx="6" fill="#064e3b"/>
+            <text x="270" y="82" font-family="'Inter', sans-serif" font-size="10" font-weight="600" fill="#d1fae5">Mattermost Storage</text>
+            <text x="270" y="94" font-family="'Fira Code', monospace" font-size="8.5" fill="#a7f3d0">db: mattermost • users/chat</text>
+
+            <rect x="496" y="66" width="260" height="34" rx="6" fill="#064e3b"/>
+            <text x="506" y="82" font-family="'Inter', sans-serif" font-size="10" font-weight="600" fill="#d1fae5">RAG Vector Embeddings</text>
+            <text x="506" y="94" font-family="'Fira Code', monospace" font-size="8.5" fill="#a7f3d0">db: rag_storage • vector(768) HNSW</text>
+          </g>
+
+          <!-- Postgres Exporter Badge -->
+          <g transform="translate(80, 625)">
+            <rect x="0" y="0" width="210" height="65" rx="10" fill="#132e2b" stroke="#34d399" stroke-width="1.5"/>
+            <text x="14" y="24" font-family="'Inter', sans-serif" font-size="11.5" font-weight="700" fill="#a7f3d0">postgres-exporter v0.20.1</text>
+            <text x="14" y="42" font-family="'Fira Code', monospace" font-size="10" fill="#6ee7b7">:9187 • pg_stat_statements</text>
+            <text x="14" y="55" font-family="'Inter', sans-serif" font-size="9" fill="#9ca3af">Buffer hits • locks • latency</text>
+          </g>
+
+          <path d="M 290 655 L 340 655" stroke="#34d399" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#arrow-emerald)"/>
+          <path d="M 185 625 C 185 360, 600 360, 600 330" fill="none" stroke="#34d399" stroke-width="1.5" stroke-dasharray="5 3"/>
+        </svg>
