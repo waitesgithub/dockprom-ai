@@ -1,5 +1,9 @@
 # Dockprom-AI: Generative UI & AIOps Copilot Stack
 
+<p align="center">
+  <img src="/waitesgithub/dockprom-ai/raw/main/img/architecture-genui.svg" alt="Dockprom-AI GenUI Logo" width="220" />
+</p>
+
 This companion repository layer extends **Dockprom-AI** with dynamic Generative UI (GenUI), conversational multi-turn triage, and RAG over incident postmortems using `pgvector`.
 
 It runs via `compose-genui.yaml` on top of the shared `monitor-net` Docker network.
@@ -13,4 +17,4 @@ It runs via `compose-genui.yaml` on top of the shared `monitor-net` Docker netwo
 
 ## Architecture Flow
 
-![Dockprom-AI GenUI Architecture](docs/architecture-genui.svg)
+![Dockprom-AI GenUI Architecture](/waitesgithub/dockprom-ai/raw/main/img/architecture-genui.svg)
