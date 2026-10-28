@@ -1,7 +1,23 @@
 <p align="center">
-  <img src="docs/dockprom-ai-logo.svg" alt="Dockprom-AI Logo" width="280">
+  <picture>
+    <img src="./docs/dockprom-ai-logo.svg" alt="Dockprom-AI Logo" width="450">
+  </picture>
 </p>
 
+<h1 align="center">Dockprom-AI</h1>
+
+<p align="center">
+  <b>Production-Grade AI Observability &amp; AIOps Platform</b><br>
+  <sub>Prometheus 3 • Grafana 13 • Loki 3 • Tempo 3 • OpenTelemetry • Host Ollama Gateway • MCP Servers • pgvector</sub>
+</p>
+
+<p align="center">
+  <a href="https://github.com/grafana/mcp-grafana/actions/workflows/unit.yml"><img src="https://github.com/grafana/mcp-grafana/actions/workflows/unit.yml/badge.svg" alt="Unit Tests"></a>
+  <a href="https://github.com/grafana/mcp-grafana/actions/workflows/integration.yml"><img src="https://github.com/grafana/mcp-grafana/actions/workflows/integration.yml/badge.svg" alt="Integration Tests"></a>
+  <a href="https://github.com/grafana/mcp-grafana/actions/workflows/e2e.yml"><img src="https://github.com/grafana/mcp-grafana/actions/workflows/e2e.yml/badge.svg" alt="E2E Tests"></a>
+</p>
+
+---
 
 ### Overview: **Dockprom-AI**
 **Dockprom-AI** is a production-grade, out-of-the-box monitoring, tracing, and AIOps observability stack designed for Docker hosts, containers, and LLM applications. It modernizes the classic [stefanprodan/dockprom](https://github.com/stefanprodan/dockprom) architecture by incorporating native AI agent interfaces via the Model Context Protocol (MCP), local host-level LLM inference, vector-enabled incident storage, and generative UI capabilities.
