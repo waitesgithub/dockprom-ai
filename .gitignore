@@ -1,0 +1,43 @@
+# Secrets and Environment Configs
+.env
+*.env
+*.env.local
+
+# Docker Persistent State & Volumes
+caddy_data/
+caddy_config/
+prometheus_data/
+alertmanager_data/
+grafana_data/
+loki_data/
+tempo_data/
+keep_state/
+mattermost_db_data/
+mattermost_config/
+mattermost_data/
+mattermost_logs/
+mattermost_plugins/
+
+# Python / Chainlit Artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Node.js / Open-Intelligent-UI Artifacts
+node_modules/
+.next/
+dist/
+build/
+.npm/
+npm-debug.log*
+
+# System / OS Files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
