@@ -35,6 +35,10 @@
               <feGaussianBlur stdDeviation="4" result="blur"/>
               <feComposite in="SourceGraphic" in2="blur" operator="over"/>
             </filter>
+            <filter id="glow-emerald" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="4" result="blur"/>
+              <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+            </filter>
 
             <!-- Markers -->
             <marker id="arrow-cyan" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">

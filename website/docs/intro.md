@@ -4,8 +4,12 @@ title: Overview & Architecture
 slug: /
 ---
 
+import coreArchitecture from '@site/static/img/architecture-core.svg';
+import genuiArchitecture from '@site/static/img/architecture-genui.svg';
+import dockpromLogo from '@site/static/img/dockprom-ai-logo.png';
+
 <p align="center">
-  <img src="/img/dockprom-ai-logo.png" alt="Dockprom-AI Logo" width="340" />
+  <img src={dockpromLogo} alt="Dockprom-AI logo" width="340" />
 </p>
 
 # Dockprom-AI
@@ -29,7 +33,7 @@ Dockprom-AI operates as a coordinated **dual-stack architecture** communicating 
 The core pipeline captures metrics, distributed traces, and container logs with deep Linux kernel and host hardware instrumentation:
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/waitesgithub/dockprom-ai/main/img/architecture-core.svg" alt="Dockprom-AI Core Architecture" width="100%" />
+  <img src={coreArchitecture} alt="Dockprom-AI core observability and AIOps architecture" width="100%" />
 </p>
 
 ### 2. Generative UI & Copilot Pipeline
@@ -37,5 +41,5 @@ The core pipeline captures metrics, distributed traces, and container logs with 
 The GenUI pipeline connects user prompts to real-time telemetry, semantic runbook embeddings, and streaming React components:
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/waitesgithub/dockprom-ai/main/img/architecture-genui.svg" alt="Dockprom-AI GenUI Architecture" width="100%" />
+  <img src={genuiArchitecture} alt="Dockprom-AI Generative UI and AIOps copilot architecture" width="100%" />
 </p>

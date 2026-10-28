@@ -17,6 +17,20 @@
               <feGaussianBlur stdDeviation="4" result="blur"/>
               <feComposite in="SourceGraphic" in2="blur" operator="over"/>
             </filter>
+
+            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#27272a" stroke-width="0.75" stroke-opacity="0.4"/>
+            </pattern>
+
+            <marker id="arrow-purple" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 8 5 L 0 9 z" fill="#a855f7"/>
+            </marker>
+            <marker id="arrow-emerald" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 8 5 L 0 9 z" fill="#10b981"/>
+            </marker>
+            <marker id="arrow-cyan" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 8 5 L 0 9 z" fill="#0ea5e9"/>
+            </marker>
           </defs>
 
           <!-- Background -->

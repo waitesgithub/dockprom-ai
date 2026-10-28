@@ -77,6 +77,22 @@ Designed to run alongside the core stack on the shared `monitor-net` Docker netw
 
 --- 
 
-### Architecture Flow
-![Dockprom-AI Core Architecture](/img/architecture-core.svg)
+### Architecture
 
+The diagrams are stored with the Docusaurus static assets so the same files are
+rendered on GitHub and in the documentation site.
+
+#### Core observability and AIOps stack
+
+<p align="center">
+  <img src="website/static/img/architecture-core.svg" alt="Dockprom-AI core observability and AIOps architecture" width="100%" />
+</p>
+
+#### Generative UI and AIOps copilot stack
+
+<p align="center">
+  <img src="website/static/img/architecture-genui.svg" alt="Dockprom-AI Generative UI and AIOps copilot architecture" width="100%" />
+</p>
+
+See [`README_GENUI.md`](README_GENUI.md) for details about the Generative UI
+companion stack.
