@@ -77,6 +77,62 @@ Designed to run alongside the core stack on the shared `monitor-net` Docker netw
 
 --- 
 
+## Pre-Configured Grafana Dashboards
+
+Dockprom-AI provisions dashboards out-of-the-box using the modern Grafana provisioning schema (`grafana/provisioning/dashboards/dashboards.yml`). Dashboards are sourced from official upstream releases and Grafana Labs repositories.
+
+### Dashboard Manifest
+
+| Category | Dashboard Name | Grafana Labs ID / Source | Datasource(s) | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| **Container & Host** | **Logporter Docker Exporter** | [`23848`](https://grafana.com/grafana/dashboards/23848-docker-exporter-logporter/) | Prometheus, Loki | Official Logporter dashboard: CPU, memory, volume sizes, restart counts, image update alerts, and embedded Loki container logs. |
+| **Container & Host** | **Node Exporter Full** | [`1860`](https://grafana.com/grafana/dashboards/1860-node-exporter-full/) | Prometheus | Comprehensive host hardware/OS telemetry: CPU usage by core, memory commit, disk I/O latency, network traffic, and system load. |
+| **AI & MCP Observability** | **MCP Server Observability** | [`25252`](https://grafana.com/grafana/dashboards/25252-mcp-server-observability/) | Prometheus, Loki, Tempo | Full-stack monitoring for `mcp-grafana` and `prometheus-mcp`: SSE sessions, message rates, JSON-RPC errors, tool invocation latency, and execution logs. |
+| **AI & LLM Gateway** | **Envoy Ollama Proxy** | Custom / Envoy Stats | Prometheus, Tempo | Request throughput, p50/p95/p99 inferencing latencies, HTTP error rates, and OTLP traces for host Ollama requests. |
+| **Telemetry Ingestion** | **OpenTelemetry Collector** | [`15983`](https://grafana.com/grafana/dashboards/15983-opentelemetry-collector-telemetry/) | Prometheus | Collector operational pipeline metrics: receiver queue sizes, batch processor latency, export drops, and data transmission throughput. |
+| **Stack Health** | **Prometheus 3.x System Overview** | [`3662`](https://grafana.com/grafana/dashboards/3662-prometheus-2-0-overview/) | Prometheus | Scraping health, TSDB compaction rate, ingestion head chunks, sample scrape rates, and query latency percentiles. |
+| **Stack Health** | **Loki Logging Stack Health** | [`13407`](https://grafana.com/grafana/dashboards/13407-loki-dashboard/) | Prometheus, Loki | Chunks stored, stream indexing status, query throughput, per-tenant volume rates, and flush operations. |
+| **Stack Health** | **Tempo Traces & Storage** | [`15984`](https://grafana.com/grafana/dashboards/15984-tempo-operational-dashboard/) | Prometheus, Tempo | Ingestion block generation, WAL size, span compaction schedules, and search request performance. |
+
+---
+
+### Automated Dashboard Provisioning Script
+
+Run this command prior to spinning up the stack to pull the dashboards directly into Grafana's provisioned directory:
+
+```bash
+mkdir -p grafana/provisioning/dashboards
+
+# 1. Official Logporter Dashboard (ID: 23848)
+curl -fsSL [https://grafana.com/api/dashboards/23848/revisions/latest/download](https://grafana.com/api/dashboards/23848/revisions/latest/download) \
+  -o grafana/provisioning/dashboards/logporter.json
+
+# 2. Node Exporter Full (ID: 1860)
+curl -fsSL [https://grafana.com/api/dashboards/1860/revisions/latest/download](https://grafana.com/api/dashboards/1860/revisions/latest/download) \
+  -o grafana/provisioning/dashboards/node-exporter-full.json
+
+# 3. MCP Server Observability (ID: 25252)
+curl -fsSL [https://grafana.com/api/dashboards/25252/revisions/latest/download](https://grafana.com/api/dashboards/25252/revisions/latest/download) \
+  -o grafana/provisioning/dashboards/mcp-server-observability.json
+
+# 4. OpenTelemetry Collector Ingestion Pipeline (ID: 15983)
+curl -fsSL [https://grafana.com/api/dashboards/15983/revisions/latest/download](https://grafana.com/api/dashboards/15983/revisions/latest/download) \
+  -o grafana/provisioning/dashboards/otel-collector.json
+
+# 5. Prometheus System Overview (ID: 3662)
+curl -fsSL [https://grafana.com/api/dashboards/3662/revisions/latest/download](https://grafana.com/api/dashboards/3662/revisions/latest/download) \
+  -o grafana/provisioning/dashboards/prometheus-overview.json
+
+# 6. Loki Operations Dashboard (ID: 13407)
+curl -fsSL [https://grafana.com/api/dashboards/13407/revisions/latest/download](https://grafana.com/api/dashboards/13407/revisions/latest/download) \
+  -o grafana/provisioning/dashboards/loki-operations.json
+
+# 7. Tempo Traces Engine Overview (ID: 15984)
+curl -fsSL [https://grafana.com/api/dashboards/15984/revisions/latest/download](https://grafana.com/api/dashboards/15984/revisions/latest/download) \
+  -o grafana/provisioning/dashboards/tempo-operations.json
+```
+---
+
 ### Architecture
 
 The diagrams are stored with the Docusaurus static assets so the same files are
