@@ -93,6 +93,7 @@ Dockprom-AI provisions dashboards out-of-the-box using the modern Grafana provis
 | **Stack Health** | **Prometheus 3.x System Overview** | [`3662`](https://grafana.com/grafana/dashboards/3662-prometheus-2-0-overview/) | Prometheus | Scraping health, TSDB compaction rate, ingestion head chunks, sample scrape rates, and query latency percentiles. |
 | **Stack Health** | **Loki Logging Stack Health** | [`13407`](https://grafana.com/grafana/dashboards/13407-loki-dashboard/) | Prometheus, Loki | Chunks stored, stream indexing status, query throughput, per-tenant volume rates, and flush operations. |
 | **Stack Health** | **Tempo Traces & Storage** | [`15984`](https://grafana.com/grafana/dashboards/15984-tempo-operational-dashboard/) | Prometheus, Tempo | Ingestion block generation, WAL size, span compaction schedules, and search request performance. |
+| **Ollama Monitoring** | **Ollama LLM Inferenence** | [_`25086`_](https://grafana.com/grafana/dashboards/25086-ollama-llm-inference/) | Prometheus, Ollama Exporter | Ollama dashboard for the ollama-exporter written in go (https://github.com/maravexa/ollama-exporter) |
 
 ---
 
@@ -130,6 +131,10 @@ curl -fsSL [https://grafana.com/api/dashboards/13407/revisions/latest/download](
 # 7. Tempo Traces Engine Overview (ID: 15984)
 curl -fsSL [https://grafana.com/api/dashboards/15984/revisions/latest/download](https://grafana.com/api/dashboards/15984/revisions/latest/download) \
   -o grafana/provisioning/dashboards/tempo-operations.json
+
+# 8. Ollama LLM Inference (ID: 25086)
+curl -fsSL [https://grafana.com/api/dashboards/25086/revisions/1/download](https://grafana.com/api/dashboards/25086/revisions/latest/download) \
+  -o grafana/provisioning/dashboards/prometheus-overview.json
 ```
 ---
 
