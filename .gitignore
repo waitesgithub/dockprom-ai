@@ -29,6 +29,7 @@ venv/
 
 # Node.js / Open-Intelligent-UI Artifacts
 node_modules/
+.docusaurus/
 .next/
 dist/
 build/
