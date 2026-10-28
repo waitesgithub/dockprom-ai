@@ -74,3 +74,9 @@ Designed to run alongside the core stack on the shared `monitor-net` Docker netw
 * **Hardware-Accelerated LLMs**: Runs Ollama directly on the host for direct GPU access without Dockerized CUDA/ROCm complications.
 * **RAG-Ready Incident Management**: Combines `pgvector` with OpenTelemetry and PromQL to ground AI agent recommendations directly in live cluster metrics, logs, and historical postmortems.
 * **Generative UI**: Combines Chainlit + OpenUI + OpenIntelligent-UI
+
+--- 
+
+### Architecture Flow
+![Dockprom-AI Core Architecture](/img/architecture-core.svg)
+
