@@ -1,14 +1,13 @@
 <p align="center">
   <picture>
-    <img src="./docs/dockprom-ai-logo.png" alt="Dockprom-AI Logo" width="350">
+    <img src="./docs/dockprom-ai-logo.png" alt="Dockprom-AI Logo" width="800">
   </picture>
 </p>
 
-<h1 align="center">Dockprom-AI</h1>
-
 <p align="center">
   <b>Production-Grade AI Observability &amp; AIOps Platform</b><br>
-  <sub>Prometheus 3 • Grafana 13 • Loki 3 • Tempo 3 • OpenTelemetry • Host Ollama Gateway • MCP Servers • pgvector</sub>
+  <sub>Prometheus • Grafana • Loki • Tempo • OpenTelemetry • Host Ollama Gateway • MCP Servers • pgvector</sub>
+  <sub>OpenUI • OpenIntelligence UI • Chainlit</sub>
 </p>
 
 <p align="center">
@@ -74,4 +73,4 @@ Designed to run alongside the core stack on the shared `monitor-net` Docker netw
 * **Works Out-of-the-Box**: Includes automated host provisioning scripts (`install-host-prereqs.sh`) for Docker Engine, Docker Compose, and native host Ollama setup.
 * **Hardware-Accelerated LLMs**: Runs Ollama directly on the host for direct GPU access without Dockerized CUDA/ROCm complications.
 * **RAG-Ready Incident Management**: Combines `pgvector` with OpenTelemetry and PromQL to ground AI agent recommendations directly in live cluster metrics, logs, and historical postmortems.
-* 
+* **Generative UI**: Combines Chainlit + OpenUI + OpenIntelligent-UI
