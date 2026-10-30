@@ -42,7 +42,7 @@ The repository is structured into two main layers:
 * **OpenTelemetry Collector Contrib 0.164.0**: Unified pipeline receiving OTLP traces, logs, and metrics (via ports `4317` gRPC and `4318` HTTP).
 
 * **Dashboards & Edge Ingress**:
-* **Grafana 13.0.2**: Pre-provisioned dashboards covering Logporter, Node Exporter, PostgreSQL, OpenTelemetry pipelines, and MCP server health.
+* **Grafana 13.3.0**: Pre-provisioned dashboards covering Logporter, Node Exporter, PostgreSQL, OpenTelemetry pipelines, and MCP server health.
 * **Caddy 2.11.7**: Edge reverse proxy terminating bcrypt-hashed basic authentication for exposed services.
 
 * **Incident Management & Collaboration**:
