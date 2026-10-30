@@ -21,6 +21,143 @@ This repository now includes placeholder infrastructure for:
 The placeholder panels intentionally display **No data** until their exporter
 or application instrumentation is enabled. They do not manufacture values.
 
+## Implementation status
+
+This status reflects the repository contents, not only the intended
+architecture. A provisioned dashboard is considered complete as a dashboard
+artifact, but it is not considered operational until its telemetry producer is
+connected and emitting the documented contract.
+
+| Area | Status | Remaining work |
+| --- | --- | --- |
+| Grafana 13.3.0 configuration | Partial | Compose uses `grafana/grafana:13.3.0`; rerun dashboard provisioning tests against that exact image. |
+| Dashboard JSON | Complete | Thirteen dashboard files exist with Grafana 13 `schemaVersion: 42`. Maintain compatibility tests when Grafana changes. |
+| Grafana provisioning | Complete | Dashboard and datasource provisioning files exist. Validate them during CI and container startup. |
+| Prometheus configuration | Partial | Scrape jobs exist, but several referenced services are not provided by the current Compose files. |
+| Core exporters | Partial | Node Exporter and PostgreSQL Exporter are defined; NVIDIA DCGM Exporter is optional and host-specific exporters still require selection. |
+| Recording and alerting rules | Not started | Add Prometheus recording rules, SLO rules, and alert rules. |
+| Application telemetry | Not started | Chainlit, OpenUI, RAG, MCP, and AI security signals still use a placeholder telemetry contract. |
+| OpenTelemetry integration | Partial | Datasource and contract documentation exist; add and configure the Collector and instrument the applications. |
+| MCP execution | Not started | Chainlit has MCP endpoint configuration but does not invoke MCP tools. |
+| Runtime and supply-chain security | Documentation only | Falco and Trivy installation guidance exists; operational ingestion and dashboards need live events. |
+| PydanticAI agents | In progress | Five read-only Python agents exist locally under `agents/`; complete testing, harness integration, documentation, and repository commit. |
+| Custom agent harness | Not complete | Centralize policy, budgets, audit metadata, model execution, tool authorization, and containment for every agent. |
+
+### Unresolved scrape targets
+
+Prometheus currently declares jobs for the following services, but the current
+`compose.yaml` and `compose-genui.yaml` do not define all of them. Each target
+must either gain a Compose service, be configured as an external deployment, or
+be removed or disabled until available:
+
+- OpenTelemetry Collector;
+- Envoy/Ollama gateway;
+- Ollama exporter;
+- Grafana MCP server;
+- Prometheus MCP server;
+- Caddy;
+- Alertmanager;
+- Loki;
+- Tempo;
+- Keep;
+- Falco.
+
+## Remaining observability work
+
+Complete this work in the following order so dashboards become operational
+without inventing telemetry:
+
+1. Pull `grafana/grafana:13.3.0`, start a disposable Grafana instance, and
+   verify that all provisioned datasources and thirteen dashboards load without
+   migration or plugin errors.
+2. Add CI validation for dashboard JSON, provisioning YAML, Prometheus
+   configuration, Compose interpolation, and Grafana startup provisioning.
+3. Add Prometheus recording rules for availability, request and error rates,
+   latency percentiles, saturation, AI workflow success, and SLO/error-budget
+   calculations.
+4. Add alert rules for service failure, elevated AI latency, RAG failures,
+   telemetry loss, PostgreSQL saturation, GPU pressure, and high-severity AI or
+   runtime-security events.
+5. Define or connect the missing Loki, Tempo, Alertmanager, OpenTelemetry
+   Collector, edge, incident-management, MCP, Ollama, and security services.
+6. Instrument Chainlit message receipt, embedding, retrieval, generation,
+   first-token, streaming, completion, and error stages using OpenTelemetry
+   Generative AI semantic conventions.
+7. Instrument OpenUI navigation, component generation, render success, render
+   failure, abandonment, and client-perceived latency.
+8. Propagate trace context across Chainlit, pgvector, Envoy/Ollama, MCP tools,
+   and OpenUI so dashboards can correlate metrics, logs, and traces.
+9. Emit low-cardinality RAG quality metrics for empty results, similarity
+   thresholds, result ranking, corpus coverage, freshness, and retrieval
+   latency without exposing document content.
+10. Emit structured AI security events for prompt injection, jailbreak,
+    leakage, policy decisions, suspicious retrieval, and model or tool abuse.
+11. Implement MCP tool execution with strict schemas, per-call authorization,
+    explicit confirmation for risky actions, bounded results, and correlated
+    audit events.
+12. Export Falco detections and Trivy scan summaries into the observability
+    pipeline while keeping raw sensitive findings in restricted storage.
+13. Add host-appropriate GPU telemetry and correlate model queueing, token
+    throughput, memory pressure, temperature, power, and CPU fallback.
+14. Create operational runbooks and dashboard links for every actionable alert.
+
+## Remaining agent work
+
+Use PydanticAI as the only agent framework. All agents must be Python based and
+live under the repository's separate `agents/` package. The initial portfolio
+contains the Observability Triage, LLM Performance, RAG Quality, AI Security,
+and Capacity Planning agents. Before that package is production-ready:
+
+1. Implement one custom PydanticAI harness as the mandatory execution boundary
+   for every agent; agents must not invoke models or tools around the harness.
+2. Make the harness responsible for agent lookup, typed input/output
+   validation, immutable system instructions, dependency construction, model
+   invocation, and normalized structured errors.
+3. Enforce per-agent allowlists and authorize every tool call outside model
+   reasoning. Deny calls with missing identity, scope, or policy context.
+4. Enforce budgets for wall-clock duration, model requests, tokens, retries,
+   tool calls, concurrency, delegation depth, and tool-result size.
+5. Generate immutable agent-run and trace identifiers and emit structured audit
+   events for run start, model operation, policy decision, tool call, denial,
+   failure, and completion.
+6. Add global and per-agent kill switches, circuit breakers, bounded retries,
+   and safe failure behavior when model, telemetry, or policy services are
+   unavailable.
+7. Redact credentials, authentication headers, PII, raw prompts, raw model
+   responses, and sensitive tool content before telemetry or audit emission.
+8. Keep endpoint origins operator-configured, reject embedded credentials,
+   disable redirects, validate queries and trace identifiers, and retain strict
+   response-size and timeout limits.
+9. Add unit tests for settings, schemas, registry selection, tool allowlists,
+   dependency injection, structured output, and all harness budget failures.
+10. Add adversarial tests for direct and indirect prompt injection, SSRF,
+    command injection, path traversal, tool-result spoofing, confused-deputy
+    behavior, goal drift, and hallucinated success.
+11. Add security tests for cross-tenant isolation, memory poisoning, approval
+    replay, parameter substitution, privilege escalation, retry storms, and
+    audit completeness.
+12. Use PydanticAI's deterministic test model for unit tests; tests must not
+    contact Ollama or production observability services.
+13. Add OpenTelemetry spans and metrics for agent runs, model calls, tool calls,
+    policy denials, retries, budget exhaustion, circuit breakers, and run
+    outcomes without recording chain-of-thought.
+14. Document installation, environment configuration, agent selection, example
+    read-only runs, security boundaries, and troubleshooting.
+15. Run the complete Python test suite, type and import checks, dependency scan,
+    secret scan, and container/repository security checks before committing the
+    package.
+16. Update `docs/AGENT_ROADMAP.md` and the Docusaurus secure-agent documentation
+    to distinguish implemented agents from planned agents.
+17. Commit the `agents/` package only after the harness and its security tests
+    pass, then add it to CI as an independently testable Python project.
+
+Later agent phases remain intentionally unimplemented: Runbook Recommendation,
+MCP Tool Policy, Incident Correlation, Runtime and Supply-Chain, Telemetry
+Engineering, Remediation Planner, Runbook Curator, Post-Incident Review, and the
+approval-gated Change Executor. Do not implement write-capable execution until
+the identity, policy, approval, verification, rollback, audit, adversarial-test,
+shadow-mode, and canary gates in `docs/AGENT_ROADMAP.md` are satisfied.
+
 ## Guiding principles
 
 1. Measure user-impacting workflows from prompt receipt through retrieval,
