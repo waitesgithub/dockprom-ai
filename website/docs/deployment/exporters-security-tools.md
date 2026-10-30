@@ -85,7 +85,7 @@ Run CLI scans without committing reports containing secrets:
 ```bash
 trivy repository --scanners vuln,secret,misconfig .
 trivy config compose.yaml
-trivy image --severity HIGH,CRITICAL --exit-code 1 grafana/grafana-oss:latest
+trivy image --severity HIGH,CRITICAL --exit-code 1 grafana/grafana:13.3.0
 trivy fs --format json --output /tmp/trivy-results.json .
 ```
 
