@@ -160,7 +160,7 @@
           <!-- Grafana v13 -->
           <g transform="translate(340, 260)">
             <rect x="0" y="0" width="220" height="90" rx="12" fill="#111827" stroke="#f59e0b" stroke-width="1.5"/>
-            <text x="16" y="28" font-family="'Inter', sans-serif" font-size="13" font-weight="700" fill="#fbbf24">Grafana 13.3.0</text>
+            <text x="16" y="28" font-family="'Inter', sans-serif" font-size="13" font-weight="700" fill="#fbbf24">Grafana 13.0.2</text>
             <text x="16" y="48" font-family="'Fira Code', monospace" font-size="11" fill="#94a3b8">Port :3000 • Dashboards</text>
             <text x="16" y="68" font-family="'Inter', sans-serif" font-size="10" fill="#cbd5e1">Explore • LogQL &amp; TraceQL</text>
           </g>

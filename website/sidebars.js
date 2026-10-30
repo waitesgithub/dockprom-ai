@@ -4,7 +4,11 @@ module.exports = {
     {
       type: 'category',
       label: 'Architecture',
-      items: ['architecture/core-stack', 'architecture/genui-stack'],
+      items: [
+        'architecture/core-stack',
+        'architecture/genui-stack',
+        'architecture/secure-agents',
+      ],
     },
     {
       type: 'category',
@@ -18,12 +22,19 @@ module.exports = {
         'deployment/host-prereqs',
         'deployment/configuration-env',
         'deployment/dashboards',
+        'deployment/telemetry-contract',
+        'deployment/exporters-security-tools',
       ],
     },
     {
       type: 'category',
       label: 'Runbooks',
       items: ['runbooks/memory-eviction'],
+    },
+    {
+      type: 'category',
+      label: 'Security',
+      items: ['security/owasp-agent-controls'],
     },
   ],
 };

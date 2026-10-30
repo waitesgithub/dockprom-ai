@@ -42,7 +42,7 @@ The repository is structured into two main layers:
 * **OpenTelemetry Collector Contrib 0.164.0**: Unified pipeline receiving OTLP traces, logs, and metrics (via ports `4317` gRPC and `4318` HTTP).
 
 * **Dashboards & Edge Ingress**:
-* **Grafana 13.3.0**: Pre-provisioned dashboards covering Logporter, Node Exporter, PostgreSQL, OpenTelemetry pipelines, and MCP server health.
+* **Grafana 13.0.2**: Pre-provisioned dashboards covering Logporter, Node Exporter, PostgreSQL, OpenTelemetry pipelines, and MCP server health.
 * **Caddy 2.11.7**: Edge reverse proxy terminating bcrypt-hashed basic authentication for exposed services.
 
 * **Incident Management & Collaboration**:
@@ -79,7 +79,10 @@ Designed to run alongside the core stack on the shared `monitor-net` Docker netw
 
 ## Pre-Configured Grafana Dashboards
 
-Dockprom-AI provisions dashboards out-of-the-box using the modern Grafana provisioning schema (`grafana/provisioning/dashboards/dashboards.yml`). Dashboards are sourced from official upstream releases and Grafana Labs repositories.
+Dockprom-AI provisions dashboards out-of-the-box using Grafana file provisioning
+(`grafana/provisioning/dashboards/dashboards.yml`). The catalog combines
+documented upstream dashboard references with locally generated dashboards for
+AI workflows, security, agents, and platform operations.
 
 ### Dashboard Manifest
 
@@ -93,49 +96,41 @@ Dockprom-AI provisions dashboards out-of-the-box using the modern Grafana provis
 | **Stack Health** | **Prometheus 3.x System Overview** | [`3662`](https://grafana.com/grafana/dashboards/3662-prometheus-2-0-overview/) | Prometheus | Scraping health, TSDB compaction rate, ingestion head chunks, sample scrape rates, and query latency percentiles. |
 | **Stack Health** | **Loki Logging Stack Health** | [`13407`](https://grafana.com/grafana/dashboards/13407-loki-dashboard/) | Prometheus, Loki | Chunks stored, stream indexing status, query throughput, per-tenant volume rates, and flush operations. |
 | **Stack Health** | **Tempo Traces & Storage** | [`15984`](https://grafana.com/grafana/dashboards/15984-tempo-operational-dashboard/) | Prometheus, Tempo | Ingestion block generation, WAL size, span compaction schedules, and search request performance. |
-| **Ollama Monitoring** | **Ollama LLM Inferenence** | [_`25086`_](https://grafana.com/grafana/dashboards/25086-ollama-llm-inference/) | Prometheus, Ollama Exporter | Ollama dashboard for the ollama-exporter written in go (https://github.com/maravexa/ollama-exporter) |
+| **Ollama Monitoring** | **Ollama LLM Inference** | [`25086`](https://grafana.com/grafana/dashboards/25086-ollama-llm-inference/) | Prometheus, Ollama Exporter | Ollama dashboard for the open-source [ollama-exporter](https://github.com/maravexa/ollama-exporter). |
+| **AI Operations** | **AI Operations Command Center** | Local JSON | Prometheus, Loki, Tempo | Cross-stack availability, workflow SLOs, errors, alerts, and slow traces. |
+| **AI Observability** | **Ollama Inference and Model Performance** | Local JSON | Prometheus, Loki, Tempo | OpenTelemetry GenAI operation latency, TTFT, token usage, context utilization, queueing, and model load duration. |
+| **GenUI** | **GenUI End-to-End Experience** | Local JSON | Prometheus, Tempo | Chainlit, RAG, Ollama, streaming, and OpenUI user-journey measurements. |
+| **RAG** | **RAG and pgvector Quality** | Local JSON | Prometheus, PostgreSQL, Loki | Retrieval latency, empty results, similarity quality, runbook coverage, and vector-search failures. |
+| **AI Security** | **AI Security Detection Center** | Local JSON | Prometheus, Loki, Tempo | Prompt injection, jailbreak, leakage, policy actions, and trace-linked detections. |
+| **MCP Security** | **MCP Tool Security and Audit** | Local JSON | Prometheus, Loki, Tempo | Tool outcomes, risk, confirmations, JSON-RPC errors, audit events, and execution traces. |
+| **Database** | **PostgreSQL and pgvector Operations** | Local JSON | Prometheus, PostgreSQL | Connections, transactions, cache, deadlocks, growth, long queries, and vector indexes. |
+| **Edge Security** | **Edge Authentication and API Security** | Local JSON | Prometheus, Loki | Authentication failures, scanning, upstream errors, TLS, and unexpected public binds. |
+| **Incidents** | **Incident Response Effectiveness** | Local JSON | Prometheus, Loki | Alert outcomes, MTTA, MTTR, notifications, runbook coverage, and incident timelines. |
+| **Telemetry Quality** | **OpenTelemetry Signal Quality** | Local JSON | Prometheus | Accepted/refused signals, export failures, queues, identity gaps, and cardinality. |
+| **Capacity** | **GPU and Model Capacity** | Local JSON | Prometheus | Accelerator utilization, memory, thermals, errors, queueing, and token throughput. |
+| **Agent Security** | **Agent Harness Security and Operations** | Local JSON | Prometheus, Loki, Tempo | Agent outcomes, policy denials, approvals, delegation, budgets, and safety actions. |
+| **Runtime Security** | **Runtime and Supply-Chain Security** | Local JSON | Prometheus, Loki | Falco detections, Trivy summaries, image policy, and container compliance. |
 
 ---
 
-### Automated Dashboard Provisioning Script
+### Dashboard provisioning
 
-Run this command prior to spinning up the stack to pull the dashboards directly into Grafana's provisioned directory:
+The repository contains deterministic dashboard JSON in `grafana/dashboards`
+and file provisioning in `grafana/provisioning`. Regenerate and validate the
+local dashboards before starting Grafana:
 
 ```bash
-mkdir -p grafana/provisioning/dashboards
-
-# 1. Official Logporter Dashboard (ID: 23848)
-curl -fsSL [https://grafana.com/api/dashboards/23848/revisions/latest/download](https://grafana.com/api/dashboards/23848/revisions/latest/download) \
-  -o grafana/provisioning/dashboards/logporter.json
-
-# 2. Node Exporter Full (ID: 1860)
-curl -fsSL [https://grafana.com/api/dashboards/1860/revisions/latest/download](https://grafana.com/api/dashboards/1860/revisions/latest/download) \
-  -o grafana/provisioning/dashboards/node-exporter-full.json
-
-# 3. MCP Server Observability (ID: 25252)
-curl -fsSL [https://grafana.com/api/dashboards/25252/revisions/latest/download](https://grafana.com/api/dashboards/25252/revisions/latest/download) \
-  -o grafana/provisioning/dashboards/mcp-server-observability.json
-
-# 4. OpenTelemetry Collector Ingestion Pipeline (ID: 15983)
-curl -fsSL [https://grafana.com/api/dashboards/15983/revisions/latest/download](https://grafana.com/api/dashboards/15983/revisions/latest/download) \
-  -o grafana/provisioning/dashboards/otel-collector.json
-
-# 5. Prometheus System Overview (ID: 3662)
-curl -fsSL [https://grafana.com/api/dashboards/3662/revisions/latest/download](https://grafana.com/api/dashboards/3662/revisions/latest/download) \
-  -o grafana/provisioning/dashboards/prometheus-overview.json
-
-# 6. Loki Operations Dashboard (ID: 13407)
-curl -fsSL [https://grafana.com/api/dashboards/13407/revisions/latest/download](https://grafana.com/api/dashboards/13407/revisions/latest/download) \
-  -o grafana/provisioning/dashboards/loki-operations.json
-
-# 7. Tempo Traces Engine Overview (ID: 15984)
-curl -fsSL [https://grafana.com/api/dashboards/15984/revisions/latest/download](https://grafana.com/api/dashboards/15984/revisions/latest/download) \
-  -o grafana/provisioning/dashboards/tempo-operations.json
-
-# 8. Ollama LLM Inference (ID: 25086)
-curl -fsSL [https://grafana.com/api/dashboards/25086/revisions/1/download](https://grafana.com/api/dashboards/25086/revisions/latest/download) \
-  -o grafana/provisioning/dashboards/prometheus-overview.json
+python3 scripts/generate_grafana_dashboards.py
+find grafana/dashboards -name '*.json' -print0 | xargs -0 -n1 jq empty
+GF_SECURITY_ADMIN_PASSWORD='replace-me' \
+GRAFANA_POSTGRES_PASSWORD='replace-me' \
+POSTGRES_EXPORTER_DSN='postgresql://user:password@mattermost-db:5432/postgres?sslmode=disable' \
+  docker compose config --quiet
 ```
+
+See [`DOCKPROM_AI_ROADMAP.md`](DOCKPROM_AI_ROADMAP.md) for the implementation
+phases and [`website/docs/deployment/telemetry-contract.md`](website/docs/deployment/telemetry-contract.md)
+for the metrics and security-event contract.
 ---
 
 ### Architecture
@@ -157,3 +152,14 @@ rendered on GitHub and in the documentation site.
 
 See [`README_GENUI.md`](README_GENUI.md) for details about the Generative UI
 companion stack.
+
+## Roadmaps and security controls
+
+- [`DOCKPROM_AI_ROADMAP.md`](DOCKPROM_AI_ROADMAP.md) — dashboard, telemetry,
+  exporter, security, and delivery roadmap.
+- [`docs/AGENT_ROADMAP.md`](docs/AGENT_ROADMAP.md) — recommended agents,
+  secure harness architecture, skill contract, and rollout gates.
+- [`docs/SECURITY_CONTROL_REFERENCES.md`](docs/SECURITY_CONTROL_REFERENCES.md) —
+  OWASP and MITRE ATLAS references, control mapping, and release checklist.
+- [`docs/DASHBOARD_IMPLEMENTATION_PROMPT.md`](docs/DASHBOARD_IMPLEMENTATION_PROMPT.md) —
+  reusable prompt for future repository updates.
